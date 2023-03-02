@@ -133,21 +133,24 @@ class TEXT_OT_add_strip(bpy.types.Operator):
         if not un_selected:
             strip_name = items[index].name
             strip = get_strip_by_name(strip_name)
-            chan = find_first_empty_channel(context.scene.frame_current, context.scene.frame_current + strip.frame_final_duration)
+            cf = context.scene.frame_current
+            in_frame = cf + strip.frame_final_duration
+            out_frame = cf + (2*strip.frame_final_duration)
+            chan = find_first_empty_channel(in_frame, out_frame)
 
             # Add a new text strip after the selected strip
             strips = scene.sequence_editor.sequences
             new_strip = strips.new_effect(
-                name="",
+                name="Text",
                 type="TEXT",
                 channel=chan,
-                frame_start=context.scene.frame_current,
-                frame_end=context.scene.frame_current + strip.frame_final_duration,
+                frame_start=in_frame,
+                frame_end=out_frame,
             )
 
             # Copy the settings
             if strip and new_strip:
-                new_strip.text = ""
+                new_strip.text = "Text"
                 new_strip.font_size = strip.font_size
                 new_strip.font = strip.font
                 new_strip.color = strip.color
@@ -163,16 +166,24 @@ class TEXT_OT_add_strip(bpy.types.Operator):
                 context.scene.sequence_editor.active_strip = new_strip
         else:
             strips = scene.sequence_editor.sequences
+            chan = find_first_empty_channel(context.scene.frame_current, context.scene.frame_current+100)
+
             new_strip = strips.new_effect(
-                name="",
+                name="Text",
                 type="TEXT",
-                channel=1,
-                frame_start=1,
-                frame_end=100,
+                channel=chan,
+                frame_start=context.scene.frame_current,
+                frame_end=context.scene.frame_current+100,
             )
             context.scene.sequence_editor.active_strip = new_strip
+            new_strip.select = True
         # Refresh the UIList
         bpy.ops.text.refresh_list()
+
+#        scene.text_strip_items_index = len(scene.text_strip_items)
+#        selected_item = scene.text_strip_items[scene.text_strip_items_index]#scene.text_strip_items_index]
+#        selected_item.select = True
+#        context.scene.text_strip_items_index = len(context.scene.text_strip_items) - 1
 
         # Select the new item in the UIList
         context.scene.text_strip_items_index = index + 1
