@@ -4,6 +4,7 @@
 * Import and export of subtitles.
 * List all subtitles in order.
 * Edit subtitles in the list.
+* Search text across strips. 
 * Add and remove subtitles from the list.
 * Insert new lines in texts.
 * Translation of subtitles(currently is python module broken).
