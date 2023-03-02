@@ -7,6 +7,7 @@
 * Add and remove subtitles from the list.
 * Insert new lines in texts.
 * Translation of subtitles(currently is python module broken).
+* Copy text styling and font from active strip to all selected strips.
 
 ## Installation
 Download the [zip](https://github.com/tin2tin/subtitle_editor/archive/refs/heads/main.zip) and install.
