@@ -2,6 +2,7 @@
 
 ## Features
 * Import and export of subtitles.
+* Translate while importing(Blender must be run as admin).
 * List all subtitles in order.
 * Edit subtitles in the list.
 * Search text across strips. 
