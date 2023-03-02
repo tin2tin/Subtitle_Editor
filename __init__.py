@@ -24,6 +24,18 @@ def get_strip_by_name(name):
     return None  # Return None if the strip is not found
 
 
+import bpy
+
+def find_first_empty_channel(start_frame, end_frame):
+    for ch in range(1, len(bpy.context.scene.sequence_editor.sequences_all) + 1):
+        for seq in bpy.context.scene.sequence_editor.sequences_all:
+            if seq.channel == ch and seq.frame_final_start < end_frame and seq.frame_final_end > start_frame:
+                break
+        else:
+            return ch
+    return 1
+
+
 def update_text(self, context):
     for strip in bpy.context.scene.sequence_editor.sequences[0:]:
         if strip.type == "TEXT" and strip.name == self.name:
@@ -121,15 +133,16 @@ class TEXT_OT_add_strip(bpy.types.Operator):
         if not un_selected:
             strip_name = items[index].name
             strip = get_strip_by_name(strip_name)
+            chan = find_first_empty_channel(context.scene.frame_current, context.scene.frame_current + strip.frame_final_duration)
 
             # Add a new text strip after the selected strip
             strips = scene.sequence_editor.sequences
             new_strip = strips.new_effect(
                 name="",
                 type="TEXT",
-                channel=strip.channel,
-                frame_start=strip.frame_final_start + strip.frame_final_duration,
-                frame_end=strip.frame_final_start + (2 * strip.frame_final_duration),
+                channel=chan,
+                frame_start=context.scene.frame_current,
+                frame_end=context.scene.frame_current + strip.frame_final_duration,
             )
 
             # Copy the settings
