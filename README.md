@@ -9,7 +9,7 @@ Insert new lines in texts.
 Translation of subtitles(currently not working).
 
 ## Installation
-Download the zip and install.
+Download the (!zip)[https://github.com/tin2tin/subtitle_editor/archive/refs/heads/main.zip] and install.
 (If the python modules fail to install, run Blender as administrator, and then run the add-on)
 
 
