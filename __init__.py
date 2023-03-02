@@ -661,7 +661,7 @@ class TEXT_PT_panel(bpy.types.Panel):
 def import_subtitles(self, context):
     layout = self.layout
     layout.separator()
-    layout.operator("sequencer.import_subtitles", icon="IMPORT")
+    layout.operator("sequencer.import_subtitles", text="Subtitles", icon="ALIGN_BOTTOM")
 
 
 def copyto_panel_append(self, context):
@@ -693,7 +693,7 @@ def register():
         bpy.utils.register_class(cls)
     bpy.types.Scene.text_strip_items = bpy.props.CollectionProperty(type=TextStripItem)
     bpy.types.Scene.text_strip_items_index = bpy.props.IntProperty()
-    bpy.types.SEQUENCER_MT_strip.append(import_subtitles)
+    bpy.types.SEQUENCER_MT_add.append(import_subtitles)
     bpy.types.SEQUENCER_PT_effect.append(copyto_panel_append)
 
 
@@ -703,7 +703,7 @@ def unregister():
         bpy.utils.unregister_class(cls)
     del bpy.types.Scene.text_strip_items
     del bpy.types.Scene.text_strip_items_index
-    bpy.types.SEQUENCER_MT_strip.remove(import_subtitles)
+    bpy.types.SEQUENCER_MT_add.remove(import_subtitles)
 
 
 # Register the addon when this script is run
