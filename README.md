@@ -2,13 +2,12 @@
 
 ## Features
 * Import and export of subtitles.
-* Translate while importing(Blender must be run as admin).
+* Translate while importing subtitles(Blender must be run as admin).
 * List all subtitles in order.
 * Edit subtitles in the list.
 * Search text across strips. 
 * Add and remove subtitles from the list.
-* Insert new lines in texts.
-* Translation of subtitles(currently is python module broken).
+* Insert line breaks.
 * Copy text styling and font from active strip to all selected strips.
 
 ## Installation
