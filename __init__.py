@@ -552,7 +552,7 @@ class SEQUENCER_OT_import_subtitles(Operator, ImportHelper):
 class SEQUENCER_PT_import_subtitles(bpy.types.Panel):
     bl_space_type = "FILE_BROWSER"
     bl_region_type = "TOOL_PROPS"
-    bl_label = "" #Translation
+    bl_label = "Translation"
     bl_parent_id = "FILE_PT_operator"
 
     @classmethod
@@ -566,16 +566,14 @@ class SEQUENCER_PT_import_subtitles(bpy.types.Panel):
         layout.use_property_split = True
         layout.use_property_decorate = False  # No animation.
 
-
-#        Currently broken in lib!!!
-#        sfile = context.space_data
-#        operator = sfile.active_operator
-#        layout = layout.column(heading="Translate Subtitles")
-#        layout.prop(operator, "do_translate", text="")
-#        col = layout.column(align=False)
-#        col.prop(operator, "translate_from", text="From")
-#        col.prop(operator, "translate_to", text="To")
-#        col.active = operator.do_translate
+        sfile = context.space_data
+        operator = sfile.active_operator
+        layout = layout.column(heading="Translate Subtitles")
+        layout.prop(operator, "do_translate", text="")
+        col = layout.column(align=False)
+        col.prop(operator, "translate_from", text="From")
+        col.prop(operator, "translate_to", text="To")
+        col.active = operator.do_translate
 
 
 class SEQUENCER_OT_copy_textprops_to_selected(Operator):
