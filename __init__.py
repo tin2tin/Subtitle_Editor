@@ -695,7 +695,7 @@ def copyto_panel_append(self, context):
         layout.operator(SEQUENCER_OT_copy_textprops_to_selected.bl_idname)
 
 
-classes = [
+classes = (
     TextStripItem,
     SEQUENCER_UL_List,
     SEQUENCER_OT_refresh_list,
@@ -708,7 +708,7 @@ classes = [
     SEQUENCER_PT_import_subtitles,
     SEQUENCER_OT_copy_textprops_to_selected,
     SEQUENCER_PT_panel,
-]
+)
 
 
 def register():
