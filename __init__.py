@@ -24,8 +24,6 @@ def get_strip_by_name(name):
     return None  # Return None if the strip is not found
 
 
-import bpy
-
 def find_first_empty_channel(start_frame, end_frame):
     for ch in range(1, len(bpy.context.scene.sequence_editor.sequences_all) + 1):
         for seq in bpy.context.scene.sequence_editor.sequences_all:
@@ -179,11 +177,6 @@ class TEXT_OT_add_strip(bpy.types.Operator):
             new_strip.select = True
         # Refresh the UIList
         bpy.ops.text.refresh_list()
-
-#        scene.text_strip_items_index = len(scene.text_strip_items)
-#        selected_item = scene.text_strip_items[scene.text_strip_items_index]#scene.text_strip_items_index]
-#        selected_item.select = True
-#        context.scene.text_strip_items_index = len(context.scene.text_strip_items) - 1
 
         # Select the new item in the UIList
         context.scene.text_strip_items_index = index + 1
