@@ -679,7 +679,7 @@ class SEQUENCER_PT_panel(bpy.types.Panel):
             "text_strip_items",
             context.scene,
             "text_strip_items_index",
-            rows=1,
+            rows=8,
         )
 
         row = row.column(align=True)
