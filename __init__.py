@@ -193,6 +193,13 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
                 frame_start=context.scene.frame_current,
                 frame_end=context.scene.frame_current+100,
             )
+            new_strip.wrap_width = 0.68
+            new_strip.font_size = 44
+            new_strip.location[1] = 0.25
+            new_strip.align_x = "CENTER"
+            new_strip.align_y = "TOP"
+            new_strip.use_shadow = True
+            new_strip.use_box = True
             context.scene.sequence_editor.active_strip = new_strip
             new_strip.select = True
         # Refresh the UIList
