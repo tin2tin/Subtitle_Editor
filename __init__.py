@@ -1,12 +1,13 @@
 bl_info = {
     "name": "Subtitle Editor",
+    "description": "Displays a list of all Subtitle Editor in the VSE and allows editing of their text.",
     "author": "tintwotin",
     "version": (1, 0),
     "blender": (2, 30, 0),
     "location": "Sequencer > Side Bar > Subtitle Editor Tab",
-    "description": "Displays a list of all Subtitle Editor in the VSE and allows editing of their text.",
     "warning": "",
     "doc_url": "",
+    "support": "COMMUNITY",
     "category": "Sequencer",
 }
 
@@ -23,6 +24,8 @@ def get_strip_by_name(name):
             return strip
     return None  # Return None if the strip is not found
 
+
+import bpy
 
 def find_first_empty_channel(start_frame, end_frame):
     for ch in range(1, len(bpy.context.scene.sequence_editor.sequences_all) + 1):
@@ -60,7 +63,7 @@ class TextStripItem(bpy.types.PropertyGroup):
     selected: bpy.props.IntProperty()
 
 
-class TEXT_UL_List(bpy.types.UIList):
+class SEQUENCER_UL_List(bpy.types.UIList):
     def draw_item(
         self, context, layout, data, item, icon, active_data, active_propname
     ):
@@ -77,7 +80,7 @@ class TEXT_UL_List(bpy.types.UIList):
 
 
 # Define an operator to refresh the list
-class TEXT_OT_refresh_list(bpy.types.Operator):
+class SEQUENCER_OT_refresh_list(bpy.types.Operator):
     """Sync items in the list with the text strips"""
     bl_idname = "text.refresh_list"
     bl_label = "Refresh List"
@@ -114,7 +117,7 @@ class TEXT_OT_refresh_list(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class TEXT_OT_add_strip(bpy.types.Operator):
+class SEQUENCER_OT_add_strip(bpy.types.Operator):
     """Add a new text strip after the position of the current selected list item"""
     bl_idname = "text.add_strip"
     bl_label = "Add Text Strip"
@@ -178,13 +181,18 @@ class TEXT_OT_add_strip(bpy.types.Operator):
         # Refresh the UIList
         bpy.ops.text.refresh_list()
 
+#        scene.text_strip_items_index = len(scene.text_strip_items)
+#        selected_item = scene.text_strip_items[scene.text_strip_items_index]#scene.text_strip_items_index]
+#        selected_item.select = True
+#        context.scene.text_strip_items_index = len(context.scene.text_strip_items) - 1
+
         # Select the new item in the UIList
         context.scene.text_strip_items_index = index + 1
 
         return {"FINISHED"}
 
 
-class TEXT_OT_delete_strip(bpy.types.Operator):
+class SEQUENCER_OT_delete_strip(bpy.types.Operator):
     """Remove item and strip"""
     bl_idname = "text.delete_strip"
     bl_label = "Remove Item & Strip"
@@ -222,7 +230,7 @@ class TEXT_OT_delete_strip(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class TEXT_OT_select_next(bpy.types.Operator):
+class SEQUENCER_OT_select_next(bpy.types.Operator):
     """Select the item below"""
     bl_idname = "text.select_next"
     bl_label = "Select Next"
@@ -240,7 +248,7 @@ class TEXT_OT_select_next(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class TEXT_OT_select_previous(bpy.types.Operator):
+class SEQUENCER_OT_select_previous(bpy.types.Operator):
     """Select the item above"""
     bl_idname = "text.select_previous"
     bl_label = "Select Previous"
@@ -256,7 +264,7 @@ class TEXT_OT_select_previous(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class TEXT_OT_insert_newline(bpy.types.Operator):
+class SEQUENCER_OT_insert_newline(bpy.types.Operator):
     bl_idname = "text.insert_newline"
     bl_label = "Insert Newline"
     bl_description = "Inserts a newline character at the cursor position"
@@ -628,8 +636,8 @@ class SEQUENCER_OT_copy_textprops_to_selected(Operator):
 
 
 # Define the panel to hold the UIList and the refresh button
-class TEXT_PT_panel(bpy.types.Panel):
-    bl_idname = "TEXT_PT_panel"
+class SEQUENCER_PT_panel(bpy.types.Panel):
+    bl_idname = "SEQUENCER_PT_panel"
     bl_label = "Subtitle Editor"
     bl_space_type = "SEQUENCE_EDITOR"
     bl_region_type = "UI"
@@ -641,7 +649,7 @@ class TEXT_PT_panel(bpy.types.Panel):
         row = layout.row()
         col = row.column()
         col.template_list(
-            "TEXT_UL_List",
+            "SEQUENCER_UL_List",
             "",
             context.scene,
             "text_strip_items",
@@ -689,17 +697,17 @@ def copyto_panel_append(self, context):
 
 classes = [
     TextStripItem,
-    TEXT_UL_List,
-    TEXT_OT_refresh_list,
-    TEXT_OT_add_strip,
-    TEXT_OT_delete_strip,
-    TEXT_OT_select_next,
-    TEXT_OT_select_previous,
-    TEXT_OT_insert_newline,
+    SEQUENCER_UL_List,
+    SEQUENCER_OT_refresh_list,
+    SEQUENCER_OT_add_strip,
+    SEQUENCER_OT_delete_strip,
+    SEQUENCER_OT_select_next,
+    SEQUENCER_OT_select_previous,
+    SEQUENCER_OT_insert_newline,
     SEQUENCER_OT_import_subtitles,
     SEQUENCER_PT_import_subtitles,
     SEQUENCER_OT_copy_textprops_to_selected,
-    TEXT_PT_panel,
+    SEQUENCER_PT_panel,
 ]
 
 
