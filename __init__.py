@@ -43,8 +43,6 @@ def get_strip_by_name(name):
     return None  # Return None if the strip is not found
 
 
-import bpy
-
 def find_first_empty_channel(start_frame, end_frame):
     for ch in range(1, len(bpy.context.scene.sequence_editor.sequences_all) + 1):
         for seq in bpy.context.scene.sequence_editor.sequences_all:
