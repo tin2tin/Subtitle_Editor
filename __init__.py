@@ -176,6 +176,7 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
                 new_strip.use_bold = strip.use_bold
                 new_strip.use_italic = strip.use_italic
                 new_strip.shadow_color = strip.shadow_color
+                new_strip.use_box = strip.use_box
                 new_strip.box_margin = strip.box_margin
                 new_strip.location = strip.location
                 new_strip.align_x = strip.align_x
