@@ -40,7 +40,7 @@ def get_strip_by_name(name):
         if strip.name == name:
             print(strip.text)
             return strip
-    return None  # Return None if the strip is not found
+    return None
 
 
 def find_first_empty_channel(start_frame, end_frame):
@@ -85,15 +85,6 @@ class SEQUENCER_UL_List(bpy.types.UIList):
     ):
         layout.prop(item, "text", text="", emboss=False)
 
-    def invoke(self, context, event):  # doesn't work
-        if event.type == "LEFTMOUSE" and event.value == "RELEASE":
-            context.scene.text_strip_items_index = item.index = self.layout.active_index
-            selected_item = context.scene.text_strip_items[
-                context.scene.text_strip_items_index
-            ]
-            update_text(selected_item, context)
-        return {"RUNNING_MODAL"}
-
 
 # Define an operator to refresh the list
 class SEQUENCER_OT_refresh_list(bpy.types.Operator):
@@ -121,7 +112,7 @@ class SEQUENCER_OT_refresh_list(bpy.types.Operator):
             item = context.scene.text_strip_items.add()
             item.name = strip.name
             item.text = strip.text
-            # context.scene.text_strip_items_index +=1
+
         # Select only the active strip in the UI list
         for seq in context.scene.sequence_editor.sequences_all:
             seq.select = False
@@ -202,13 +193,9 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
             new_strip.use_box = True
             context.scene.sequence_editor.active_strip = new_strip
             new_strip.select = True
+
         # Refresh the UIList
         bpy.ops.text.refresh_list()
-
-#        scene.text_strip_items_index = len(scene.text_strip_items)
-#        selected_item = scene.text_strip_items[scene.text_strip_items_index]#scene.text_strip_items_index]
-#        selected_item.select = True
-#        context.scene.text_strip_items_index = len(context.scene.text_strip_items) - 1
 
         # Select the new item in the UIList
         context.scene.text_strip_items_index = index + 1
@@ -679,7 +666,7 @@ class SEQUENCER_PT_panel(bpy.types.Panel):
             "text_strip_items",
             context.scene,
             "text_strip_items_index",
-            rows=8,
+            rows=14,
         )
 
         row = row.column(align=True)
@@ -718,6 +705,16 @@ def copyto_panel_append(self, context):
         layout = self.layout
         layout.operator(SEQUENCER_OT_copy_textprops_to_selected.bl_idname)
 
+def setText(self,context):
+    scene = context.scene
+    current_index = context.scene.text_strip_items_index
+    max_index = len(context.scene.text_strip_items) - 1
+
+    if current_index < max_index:
+        selected_item = scene.text_strip_items[scene.text_strip_items_index]
+        selected_item.select = True
+        update_text(selected_item, context)
+
 
 classes = (
     TextStripItem,
@@ -739,7 +736,7 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.Scene.text_strip_items = bpy.props.CollectionProperty(type=TextStripItem)
-    bpy.types.Scene.text_strip_items_index = bpy.props.IntProperty()
+    bpy.types.Scene.text_strip_items_index = bpy.props.IntProperty(name = "Index for Subtitle Editor", default = 0, update = setText)
     bpy.types.SEQUENCER_MT_add.append(import_subtitles)
     bpy.types.SEQUENCER_PT_effect.append(copyto_panel_append)
 
