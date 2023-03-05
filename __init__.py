@@ -173,6 +173,7 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
                 new_strip.align_x = strip.align_x
                 new_strip.align_y = strip.align_y
                 context.scene.sequence_editor.active_strip = new_strip
+            self.report({"INFO"}, "Copying settings from the selected item")
         else:
             strips = scene.sequence_editor.sequences
             chan = find_first_empty_channel(context.scene.frame_current, context.scene.frame_current+100)
@@ -292,6 +293,7 @@ class SEQUENCER_OT_insert_newline(bpy.types.Operator):
         context.scene.text_strip_items[
             context.scene.text_strip_items_index
         ].text += chr(10)
+        self.report({"INFO"}, "New line character inserted in the end of the selected item")
         return {"FINISHED"}
 
 
