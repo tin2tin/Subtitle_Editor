@@ -4,7 +4,8 @@
 
 ## Features
 * Import and export of subtitles.
-* Translate while importing subtitles(Blender must be run as admin).
+* Transcribe audio to subtitles.
+* Translate subtitles.
 * List all subtitles in order.
 * Edit subtitles in the list.
 * Search text across strips. 
@@ -17,11 +18,12 @@ Download the [zip](https://github.com/tin2tin/subtitle_editor/archive/refs/heads
 (If the python modules fail to install, run Blender as administrator, and then run the add-on)
 
 ## Where?
-In the Sequencer sidebar, the Subtitle Editor tab can be found. Most functions are there, however the function for copying style properties can be found in the Text Strip tab. 
+In the Sequencer sidebar, the Subtitle Editor tab can be found. Most functions are there, however the function for copying style properties can be found in the Text Strip tab and in the Add menu import Subtiles and Transcription can be found.
 
 ## Modules in use
 * [pysubs2](https://github.com/tkarabela/pysubs2)
 * [SRTranslator](https://github.com/sinedie/SRTranslator)
+* [openai-whisper](https://github.com/openai/whisper)
 
 
 
