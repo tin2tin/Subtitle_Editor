@@ -33,12 +33,12 @@ import os, sys, bpy, pathlib, re
 from bpy.types import Operator
 from bpy_extras.io_utils import ImportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
+from datetime import timedelta
 
 
 def get_strip_by_name(name):
     for strip in bpy.context.scene.sequence_editor.sequences[0:]:
         if strip.name == name:
-            print(strip.text)
             return strip
     return None
 
@@ -297,6 +297,226 @@ class SEQUENCER_OT_insert_newline(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def load_subtitles(file, context, offset):
+    try:
+        import pysubs2
+    except ModuleNotFoundError:
+        import site
+        import subprocess
+        import sys
+
+        app_path = site.USER_SITE
+        if app_path not in sys.path:
+            sys.path.append(app_path)
+        pybin = sys.executable  # bpy.app.binary_path_python # Use for 2.83
+
+        print("Ensuring: pip")
+        try:
+            subprocess.call([pybin, "-m", "ensurepip"])
+        except ImportError:
+            pass
+        self.report({"INFO"}, "Installing: pysubs2 module.")
+        print("Installing: pysubs2 module")
+        subprocess.check_call([pybin, "-m", "pip", "install", "pysubs2"])
+        try:
+            import pysubs2
+        except ModuleNotFoundError:
+            print("Installation of the pysubs2 module failed")
+            self.report(
+                {"INFO"},
+                "Installing pysubs2 module failed! Try to run Blender as administrator.",
+            )
+            return {"CANCELLED"}
+    render = bpy.context.scene.render
+    fps = render.fps / render.fps_base
+    fps_conv = fps / 1000
+
+    editor = bpy.context.scene.sequence_editor
+    sequences = bpy.context.sequences
+    if not sequences:
+        addSceneChannel = 1
+    else:
+        channels = [s.channel for s in sequences]
+        channels = sorted(list(set(channels)))
+        empty_channel = channels[-1] + 1
+        addSceneChannel = empty_channel
+
+    if pathlib.Path(file).is_file():
+        if (
+            pathlib.Path(file).suffix
+            not in pysubs2.formats.FILE_EXTENSION_TO_FORMAT_IDENTIFIER
+        ):
+            print("Unable to extract subtitles from file")
+            self.report({"INFO"}, "Unable to extract subtitles from file")
+            return {"CANCELLED"}
+    try:
+        subs = pysubs2.load(file, fps=fps, encoding="utf-8")
+    except:
+        print("Import failed. Text encoding must be in UTF-8.")
+        self.report({"INFO"}, "Import failed. Text encoding must be in UTF-8.")
+        return {"CANCELLED"}
+    if not subs:
+        print("No file imported.")
+        self.report({"INFO"}, "No file imported")
+        return {"CANCELLED"}
+    for line in subs:
+        italics = False
+        bold = False
+        position = False
+        pos = []
+        line.text = line.text.replace("\\N", "\n")
+        if r"<i>" in line.text or r"{\i1}" in line.text or r"{\i0}" in line.text:
+            italics = True
+            line.text = line.text.replace("<i>", "")
+            line.text = line.text.replace("</i>", "")
+            line.text = line.text.replace("{\\i0}", "")
+            line.text = line.text.replace("{\\i1}", "")
+        if r"<b>" in line.text or r"{\b1}" in line.text or r"{\b0}" in line.text:
+            bold = True
+            line.text = line.text.replace("<b>", "")
+            line.text = line.text.replace("</b>", "")
+            line.text = line.text.replace("{\\b0}", "")
+            line.text = line.text.replace("{\\b1}", "")
+        if r"{" in line.text:
+            pos_trim = re.search(r"\{\\pos\((.+?)\)\}", line.text)
+            pos_trim = pos_trim.group(1)
+            pos = pos_trim.split(",")
+            x = int(pos[0]) / render.resolution_x
+            y = (render.resolution_y - int(pos[1])) / render.resolution_y
+            position = True
+            line.text = re.sub(r"{.+?}", "", line.text)
+        new_strip = editor.sequences.new_effect(
+            name=line.text,
+            type="TEXT",
+            channel=addSceneChannel,
+            frame_start=int(line.start * fps_conv)+offset,
+            frame_end=int(line.end * fps_conv)+offset,
+        )
+        new_strip.text = line.text
+        new_strip.wrap_width = 0.68
+        new_strip.font_size = 44
+        new_strip.location[1] = 0.25
+        new_strip.align_x = "CENTER"
+        new_strip.align_y = "TOP"
+        new_strip.use_shadow = True
+        new_strip.use_box = True
+        if position:
+            new_strip.location[0] = x
+            new_strip.location[1] = y
+            new_strip.align_x = "LEFT"
+        if italics:
+            new_strip.use_italic = True
+        if bold:
+            new_strip.use_bold = True
+    # Refresh the UIList
+    bpy.ops.text.refresh_list()
+
+
+def check_overlap(strip1, start, end):
+    
+    # Check if the strips overlap.
+    #print(str(strip1.frame_final_start + strip1.frame_final_duration)+">="+str(start)+" "+str(strip1.frame_final_start) +" <= "+str(end))
+    return ((strip1.frame_final_start + strip1.frame_final_duration) >= int(start) and (strip1.frame_final_start) <= int(end))
+
+
+class TEXT_OT_transcribe(bpy.types.Operator):
+    bl_idname = "text.transcribe"
+    bl_label = "Transcription"
+    bl_description = "Transcribe audiofile to text strips"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return context.scene.sequence_editor
+
+    # Supported languages  
+    #['Auto detection', 'Afrikaans', 'Albanian', 'Amharic', 'Arabic', 'Armenian', 'Assamese', 'Azerbaijani', 'Bashkir', 'Basque', 'Belarusian', 'Bengali', 'Bosnian', 'Breton', 'Bulgarian', 'Burmese', 'Castilian', 'Catalan', 'Chinese', 'Croatian', 'Czech', 'Danish', 'Dutch', 'English', 'Estonian', 'Faroese', 'Finnish', 'Flemish', 'French', 'Galician', 'Georgian', 'German', 'Greek', 'Gujarati', 'Haitian', 'Haitian Creole', 'Hausa', 'Hawaiian', 'Hebrew', 'Hindi', 'Hungarian', 'Icelandic', 'Indonesian', 'Italian', 'Japanese', 'Javanese', 'Kannada', 'Kazakh', 'Khmer', 'Korean', 'Lao', 'Latin', 'Latvian', 'Letzeburgesch', 'Lingala', 'Lithuanian', 'Luxembourgish', 'Macedonian', 'Malagasy', 'Malay', 'Malayalam', 'Maltese', 'Maori', 'Marathi', 'Moldavian', 'Moldovan', 'Mongolian', 'Myanmar', 'Nepali', 'Norwegian', 'Nynorsk', 'Occitan', 'Panjabi', 'Pashto', 'Persian', 'Polish', 'Portuguese', 'Punjabi', 'Pushto', 'Romanian', 'Russian', 'Sanskrit', 'Serbian', 'Shona', 'Sindhi', 'Sinhala', 'Sinhalese', 'Slovak', 'Slovenian', 'Somali', 'Spanish', 'Sundanese', 'Swahili', 'Swedish', 'Tagalog', 'Tajik', 'Tamil', 'Tatar', 'Telugu', 'Thai', 'Tibetan', 'Turkish', 'Turkmen', 'Ukrainian', 'Urdu', 'Uzbek', 'Valencian', 'Vietnamese', 'Welsh', 'Yiddish', 'Yoruba']
+
+    def execute(self, context):
+        try:
+            import whisper
+            #from whisper.utils import write_srt
+        except ModuleNotFoundError:
+            import site
+            import subprocess
+            import sys
+
+            app_path = site.USER_SITE
+            if app_path not in sys.path:
+                sys.path.append(app_path)
+            pybin = sys.executable
+
+            try:
+                subprocess.call([pybin, "-m", "ensurepip"])
+            except ImportError:
+                pass
+            self.report({"INFO"}, "Installing: Whisper module.")
+            print("Installing: Whisper module")
+            subprocess.check_call([pybin, "-m", "pip", "install", "git+https://github.com/openai/whisper.git", '--user'])
+            try:
+                import whisper
+                #from whisper.utils import write_srt
+                #self.report({"INFO"}, "Detected: Whisper module.")
+                #print("Detected: Whisper module")
+            except ModuleNotFoundError:
+                print("Installation of the Whisper module failed")
+                self.report(
+                    {"INFO"},
+                    "Installing Whisper module failed! Try to run Blender as administrator.",
+                )
+                return {"CANCELLED"} 
+        
+        current_scene = bpy.context.scene
+        try:
+            active = current_scene.sequence_editor.active_strip
+        except AttributeError:
+            self.report({"INFO"}, "No active strip selected!")
+            return {"CANCELLED"}
+        if not active:
+            self.report({"INFO"}, "No active strip!")
+            return {"CANCELLED"}
+        if not active.type == "SOUND":
+            self.report({"INFO"}, "Active strip is not a sound strip!")
+            return {"CANCELLED"}
+        offset = int(active.frame_start)
+        clip_start = int(active.frame_start+active.frame_offset_start)
+        clip_end = int(active.frame_start+active.frame_final_duration)#-active.frame_offset_end)
+
+        sound_path = bpy.path.abspath(active.sound.filepath)
+        output_dir = os.path.dirname(sound_path)
+        audio_basename = os.path.basename(sound_path)
+        
+        model = whisper.load_model("tiny") # or whatever model you prefer
+        result = model.transcribe(sound_path)
+        
+        transcribe = model.transcribe(sound_path)
+        segments = transcribe['segments']
+
+        out_dir = os.path.join(output_dir, audio_basename + ".srt")
+        if os.path.exists(out_dir):
+            os.remove(out_dir)
+
+        segmentId = 0 
+        for segment in segments:
+            startTime = str(0)+str(timedelta(seconds=int(segment['start'])))+',000'
+            endTime = str(0)+str(timedelta(seconds=int(segment['end'])))+',000'
+            text = segment['text']
+            segmentId = (segment['id']+1)
+            segment = (f"{segmentId}\n{startTime} --> {endTime}\n{text[1:] if text[0] == ' ' else text}\n\n")
+            #srtFilename = out_dir + audio_basename + ".srt"
+            with open(out_dir, 'a', encoding='utf-8') as srtFile:
+                srtFile.write(segment)
+
+        # save SRT
+#        with open(out_dir, "w", encoding="utf-8") as srt:
+#            write_srt(result["segments"], file=srt)
+        #offset = 0
+        if os.path.exists(out_dir):
+            load_subtitles(out_dir, context, offset)
+
+        return {"FINISHED"}
+
+
 class SEQUENCER_OT_import_subtitles(Operator, ImportHelper):
     """Import Subtitles"""
 
@@ -407,7 +627,6 @@ class SEQUENCER_OT_import_subtitles(Operator, ImportHelper):
 
     def execute(self, context):
         if self.do_translate:
-            print(self.translate_from)
             try:
                 from srtranslator import SrtFile
                 from srtranslator.translators.deepl import DeeplTranslator
@@ -461,125 +680,14 @@ class SEQUENCER_OT_import_subtitles(Operator, ImportHelper):
                 translator.quit()
                 print("Translating finished.")
                 self.report({"INFO"}, "Translating finished.")
-        try:
-            import pysubs2
-        except ModuleNotFoundError:
-            import site
-            import subprocess
-            import sys
-
-            app_path = site.USER_SITE
-            if app_path not in sys.path:
-                sys.path.append(app_path)
-            pybin = sys.executable  # bpy.app.binary_path_python # Use for 2.83
-
-            print("Ensuring: pip")
-            try:
-                subprocess.call([pybin, "-m", "ensurepip"])
-            except ImportError:
-                pass
-            self.report({"INFO"}, "Installing: pysubs2 module.")
-            print("Installing: pysubs2 module")
-            subprocess.check_call([pybin, "-m", "pip", "install", "pysubs2"])
-            try:
-                import pysubs2
-            except ModuleNotFoundError:
-                print("Installation of the pysubs2 module failed")
-                self.report(
-                    {"INFO"},
-                    "Installing pysubs2 module failed! Try to run Blender as administrator.",
-                )
-                return {"CANCELLED"}
-        render = bpy.context.scene.render
-        fps = render.fps / render.fps_base
-        fps_conv = fps / 1000
-
-        editor = bpy.context.scene.sequence_editor
-        sequences = bpy.context.sequences
-        if not sequences:
-            addSceneChannel = 1
-        else:
-            channels = [s.channel for s in sequences]
-            channels = sorted(list(set(channels)))
-            empty_channel = channels[-1] + 1
-            addSceneChannel = empty_channel
+ 
         file = self.filepath
         if self.do_translate:
             file = f"{os.path.splitext(file)[0]}_translated.srt"
         if not file:
             return {"CANCELLED"}
-        if pathlib.Path(file).is_file():
-            if (
-                pathlib.Path(file).suffix
-                not in pysubs2.formats.FILE_EXTENSION_TO_FORMAT_IDENTIFIER
-            ):
-                print("Unable to extract subtitles from file")
-                self.report({"INFO"}, "Unable to extract subtitles from file")
-                return {"CANCELLED"}
-        try:
-            subs = pysubs2.load(file, fps=fps, encoding="utf-8")
-        except:
-            print("Import failed. Text encoding must be in UTF-8.")
-            self.report({"INFO"}, "Import failed. Text encoding must be in UTF-8.")
-            return {"CANCELLED"}
-        if not subs:
-            print("No file imported.")
-            self.report({"INFO"}, "No file imported")
-            return {"CANCELLED"}
-        for line in subs:
-            italics = False
-            bold = False
-            position = False
-            pos = []
-            line.text = line.text.replace("\\N", "\n")
-            if r"<i>" in line.text or r"{\i1}" in line.text or r"{\i0}" in line.text:
-                italics = True
-                line.text = line.text.replace("<i>", "")
-                line.text = line.text.replace("</i>", "")
-                line.text = line.text.replace("{\\i0}", "")
-                line.text = line.text.replace("{\\i1}", "")
-            if r"<b>" in line.text or r"{\b1}" in line.text or r"{\b0}" in line.text:
-                bold = True
-                line.text = line.text.replace("<b>", "")
-                line.text = line.text.replace("</b>", "")
-                line.text = line.text.replace("{\\b0}", "")
-                line.text = line.text.replace("{\\b1}", "")
-            if r"{" in line.text:
-                pos_trim = re.search(r"\{\\pos\((.+?)\)\}", line.text)
-                print(pos_trim)
-                pos_trim = pos_trim.group(1)
-                print(pos_trim)
-                pos = pos_trim.split(",")
-                x = int(pos[0]) / render.resolution_x
-                y = (render.resolution_y - int(pos[1])) / render.resolution_y
-                position = True
-                line.text = re.sub(r"{.+?}", "", line.text)
-            print(line.start * fps_conv)
-            new_strip = editor.sequences.new_effect(
-                name=line.text,
-                type="TEXT",
-                channel=addSceneChannel,
-                frame_start=int(line.start * fps_conv),
-                frame_end=int(line.end * fps_conv),
-            )
-            new_strip.text = line.text
-            new_strip.wrap_width = 0.68
-            new_strip.font_size = 44
-            new_strip.location[1] = 0.25
-            new_strip.align_x = "CENTER"
-            new_strip.align_y = "TOP"
-            new_strip.use_shadow = True
-            new_strip.use_box = True
-            if position:
-                new_strip.location[0] = x
-                new_strip.location[1] = y
-                new_strip.align_x = "LEFT"
-            if italics:
-                new_strip.use_italic = True
-            if bold:
-                new_strip.use_bold = True
-        # Refresh the UIList
-        bpy.ops.text.refresh_list()
+        offset = 0
+        load_subtitles(file, context, offset) 
 
         return {"FINISHED"}
 
@@ -700,6 +808,12 @@ def import_subtitles(self, context):
     layout.operator("sequencer.import_subtitles", text="Subtitles", icon="ALIGN_BOTTOM")
 
 
+def transcribe(self, context):
+    layout = self.layout
+    layout.separator()
+    layout.operator("text.transcribe", text="Transcriptions", icon="SPEAKER")
+
+
 def copyto_panel_append(self, context):
     strip = context.active_sequence_strip
     strip_type = strip.type
@@ -730,6 +844,7 @@ classes = (
     SEQUENCER_OT_import_subtitles,
     SEQUENCER_PT_import_subtitles,
     SEQUENCER_OT_copy_textprops_to_selected,
+    TEXT_OT_transcribe,
     SEQUENCER_PT_panel,
 )
 
@@ -740,6 +855,7 @@ def register():
     bpy.types.Scene.text_strip_items = bpy.props.CollectionProperty(type=TextStripItem)
     bpy.types.Scene.text_strip_items_index = bpy.props.IntProperty(name = "Index for Subtitle Editor", default = 0, update = setText)
     bpy.types.SEQUENCER_MT_add.append(import_subtitles)
+    bpy.types.SEQUENCER_MT_add.append(transcribe)
     bpy.types.SEQUENCER_PT_effect.append(copyto_panel_append)
 
 
@@ -750,6 +866,7 @@ def unregister():
     del bpy.types.Scene.text_strip_items
     del bpy.types.Scene.text_strip_items_index
     bpy.types.SEQUENCER_MT_add.remove(import_subtitles)
+    bpy.types.SEQUENCER_MT_add.append(transcribe)
 
 
 # Register the addon when this script is run
