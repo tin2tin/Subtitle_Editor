@@ -4,7 +4,7 @@ A suite of tools to empower working with subtitles/text strips in the Blender Vi
 
 ## Tutorial
 
-[![IMAGE ALT TEXT HERE](http://img.youtube.com/vi/gbExt7N8OhA/0.jpg)](http://www.youtube.com/watch?v=gbExt7N8OhA)
+https://user-images.githubusercontent.com/1322593/223361423-36917ff0-2756-4e80-8c29-ce83096bf085.mp4
 
 ## Features
 * Import and export of subtitles.
@@ -17,6 +17,12 @@ A suite of tools to empower working with subtitles/text strips in the Blender Vi
 * Insert line breaks.
 * Copy text styling and font from active strip to all selected strips.
 
+## Installation
+Download the [zip](https://github.com/tin2tin/subtitle_editor/archive/refs/heads/main.zip) and install.
+(If the python modules fail to install, run Blender as administrator, and then run the add-on)
+
+## Where?
+In the Sequencer sidebar, the Subtitle Editor tab can be found. Most functions are there, however the function for copying style properties can be found in the Text Strip tab and in the Add menu import Subtitles and Transcription can be found.
 
 ## Transcriptions
 
@@ -26,14 +32,7 @@ https://user-images.githubusercontent.com/1322593/223356195-73ffebea-143d-4d36-8
 
 https://user-images.githubusercontent.com/1322593/223357037-8ff2a9c8-9ce3-410d-a344-ec2a64448883.mp4
 
-## Installation
-Download the [zip](https://github.com/tin2tin/subtitle_editor/archive/refs/heads/main.zip) and install.
-(If the python modules fail to install, run Blender as administrator, and then run the add-on)
-
-## Where?
-In the Sequencer sidebar, the Subtitle Editor tab can be found. Most functions are there, however the function for copying style properties can be found in the Text Strip tab and in the Add menu import Subtitles and Transcription can be found.
-
-## Modules in use
+## Modules used
 * [pysubs2](https://github.com/tkarabela/pysubs2)
 * [SRTranslator](https://github.com/sinedie/SRTranslator)
 * [openai-whisper](https://github.com/openai/whisper)
