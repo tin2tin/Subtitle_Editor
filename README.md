@@ -1,6 +1,6 @@
 # Blender Subtitle Editor
 
-A suite of tools to empower working with subtitles/text strips in the Blender Video Sequence Editor. Highlights are multi-language auto-transcription of subtitles, import & export of subtitles, subtitle translation to multiple languages convenient list editing of subtitles and batch changing of text styles.
+A suite of tools to empower working with subtitles/text strips in the Blender Video Sequence Editor. Highlights are multi-language auto-transcription of subtitles, import & export of subtitles, subtitle translation to multiple languages, batch changing of text styles and convenient list editing and navigation of subtitles.
 
 ## Tutorial
 
