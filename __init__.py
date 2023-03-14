@@ -782,7 +782,7 @@ class SEQUENCER_OT_export_list_subtitles(Operator, ImportHelper):
             ("mpl2", "mpl2", "MPL2"),
             # ("tmp", "tmp", "TMP"),
             ("vtt", "vtt", "WebVTT"),
-            ("microdvd", "microdvd", "MicroDVD"),
+            #("microdvd", "microdvd", "MicroDVD"),
             ("fountain", "fountain", "Fountain Screenplay"),
         ),
         default="srt",
