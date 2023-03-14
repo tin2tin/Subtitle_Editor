@@ -46,7 +46,11 @@ def get_strip_by_name(name):
 def find_first_empty_channel(start_frame, end_frame):
     for ch in range(1, len(bpy.context.scene.sequence_editor.sequences_all) + 1):
         for seq in bpy.context.scene.sequence_editor.sequences_all:
-            if seq.channel == ch and seq.frame_final_start < end_frame and seq.frame_final_end > start_frame:
+            if (
+                seq.channel == ch
+                and seq.frame_final_start < end_frame
+                and seq.frame_final_end > start_frame
+            ):
                 break
         else:
             return ch
@@ -89,6 +93,7 @@ class SEQUENCER_UL_List(bpy.types.UIList):
 # Define an operator to refresh the list
 class SEQUENCER_OT_refresh_list(bpy.types.Operator):
     """Sync items in the list with the text strips"""
+
     bl_idname = "text.refresh_list"
     bl_label = "Refresh List"
 
@@ -97,7 +102,7 @@ class SEQUENCER_OT_refresh_list(bpy.types.Operator):
         # Clear the list
         context.scene.text_strip_items.clear()
 
-        # Get a list of all Subtitle Editor in the VSE
+        # Get a list of all Text Strips in the VSE
         text_strips = [
             strip
             for strip in bpy.context.scene.sequence_editor.sequences
@@ -107,12 +112,11 @@ class SEQUENCER_OT_refresh_list(bpy.types.Operator):
         # Sort the Subtitle Editor based on their start times in the timeline
         text_strips.sort(key=lambda strip: strip.frame_start)
 
-        # Iterate through the sorted Subtitle Editor and add them to the list
+        # Iterate through the sorted text strips and add them to the list
         for strip in text_strips:
             item = context.scene.text_strip_items.add()
             item.name = strip.name
             item.text = strip.text
-
         # Select only the active strip in the UI list
         for seq in context.scene.sequence_editor.sequences_all:
             seq.select = False
@@ -126,6 +130,7 @@ class SEQUENCER_OT_refresh_list(bpy.types.Operator):
 
 class SEQUENCER_OT_add_strip(bpy.types.Operator):
     """Add a new text strip after the position of the current selected list item"""
+
     bl_idname = "text.add_strip"
     bl_label = "Add Text Strip"
     bl_options = {"REGISTER", "UNDO"}
@@ -143,7 +148,7 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
             strip = get_strip_by_name(strip_name)
             cf = context.scene.frame_current
             in_frame = cf + strip.frame_final_duration
-            out_frame = cf + (2*strip.frame_final_duration)
+            out_frame = cf + (2 * strip.frame_final_duration)
             chan = find_first_empty_channel(in_frame, out_frame)
 
             # Add a new text strip after the selected strip
@@ -176,14 +181,16 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
             self.report({"INFO"}, "Copying settings from the selected item")
         else:
             strips = scene.sequence_editor.sequences
-            chan = find_first_empty_channel(context.scene.frame_current, context.scene.frame_current+100)
+            chan = find_first_empty_channel(
+                context.scene.frame_current, context.scene.frame_current + 100
+            )
 
             new_strip = strips.new_effect(
                 name="Text",
                 type="TEXT",
                 channel=chan,
                 frame_start=context.scene.frame_current,
-                frame_end=context.scene.frame_current+100,
+                frame_end=context.scene.frame_current + 100,
             )
             new_strip.wrap_width = 0.68
             new_strip.font_size = 44
@@ -194,7 +201,6 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
             new_strip.use_box = True
             context.scene.sequence_editor.active_strip = new_strip
             new_strip.select = True
-
         # Refresh the UIList
         bpy.ops.text.refresh_list()
 
@@ -206,6 +212,7 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
 
 class SEQUENCER_OT_delete_strip(bpy.types.Operator):
     """Remove item and strip"""
+
     bl_idname = "text.delete_strip"
     bl_label = "Remove Item & Strip"
 
@@ -244,6 +251,7 @@ class SEQUENCER_OT_delete_strip(bpy.types.Operator):
 
 class SEQUENCER_OT_select_next(bpy.types.Operator):
     """Select the item below"""
+
     bl_idname = "text.select_next"
     bl_label = "Select Next"
 
@@ -262,6 +270,7 @@ class SEQUENCER_OT_select_next(bpy.types.Operator):
 
 class SEQUENCER_OT_select_previous(bpy.types.Operator):
     """Select the item above"""
+
     bl_idname = "text.select_previous"
     bl_label = "Select Previous"
 
@@ -293,11 +302,13 @@ class SEQUENCER_OT_insert_newline(bpy.types.Operator):
         context.scene.text_strip_items[
             context.scene.text_strip_items_index
         ].text += chr(10)
-        self.report({"INFO"}, "New line character inserted in the end of the selected item")
+        self.report(
+            {"INFO"}, "New line character inserted in the end of the selected item"
+        )
         return {"FINISHED"}
 
 
-def load_subtitles(file, context, offset):
+def check_pysubs2(self):
     try:
         import pysubs2
     except ModuleNotFoundError:
@@ -326,7 +337,13 @@ def load_subtitles(file, context, offset):
                 {"INFO"},
                 "Installing pysubs2 module failed! Try to run Blender as administrator.",
             )
-            return {"CANCELLED"}
+            return False
+    return True
+
+
+def load_subtitles(file, context, offset):
+    if not check_pysubs2(self):
+        return {"CANCELLED"}
     render = bpy.context.scene.render
     fps = render.fps / render.fps_base
     fps_conv = fps / 1000
@@ -340,7 +357,6 @@ def load_subtitles(file, context, offset):
         channels = sorted(list(set(channels)))
         empty_channel = channels[-1] + 1
         addSceneChannel = empty_channel
-
     if pathlib.Path(file).is_file():
         if (
             pathlib.Path(file).suffix
@@ -389,8 +405,8 @@ def load_subtitles(file, context, offset):
             name=line.text,
             type="TEXT",
             channel=addSceneChannel,
-            frame_start=int(line.start * fps_conv)+offset,
-            frame_end=int(line.end * fps_conv)+offset,
+            frame_start=int(line.start * fps_conv) + offset,
+            frame_end=int(line.end * fps_conv) + offset,
         )
         new_strip.text = line.text
         new_strip.wrap_width = 0.68
@@ -413,10 +429,11 @@ def load_subtitles(file, context, offset):
 
 
 def check_overlap(strip1, start, end):
-    
     # Check if the strips overlap.
-    #print(str(strip1.frame_final_start + strip1.frame_final_duration)+">="+str(start)+" "+str(strip1.frame_final_start) +" <= "+str(end))
-    return ((strip1.frame_final_start + strip1.frame_final_duration) >= int(start) and (strip1.frame_final_start) <= int(end))
+    # print(str(strip1.frame_final_start + strip1.frame_final_duration)+">="+str(start)+" "+str(strip1.frame_final_start) +" <= "+str(end))
+    return (strip1.frame_final_start + strip1.frame_final_duration) >= int(start) and (
+        strip1.frame_final_start
+    ) <= int(end)
 
 
 class TEXT_OT_transcribe(bpy.types.Operator):
@@ -429,13 +446,14 @@ class TEXT_OT_transcribe(bpy.types.Operator):
     def poll(cls, context):
         return context.scene.sequence_editor
 
-    # Supported languages  
-    #['Auto detection', 'Afrikaans', 'Albanian', 'Amharic', 'Arabic', 'Armenian', 'Assamese', 'Azerbaijani', 'Bashkir', 'Basque', 'Belarusian', 'Bengali', 'Bosnian', 'Breton', 'Bulgarian', 'Burmese', 'Castilian', 'Catalan', 'Chinese', 'Croatian', 'Czech', 'Danish', 'Dutch', 'English', 'Estonian', 'Faroese', 'Finnish', 'Flemish', 'French', 'Galician', 'Georgian', 'German', 'Greek', 'Gujarati', 'Haitian', 'Haitian Creole', 'Hausa', 'Hawaiian', 'Hebrew', 'Hindi', 'Hungarian', 'Icelandic', 'Indonesian', 'Italian', 'Japanese', 'Javanese', 'Kannada', 'Kazakh', 'Khmer', 'Korean', 'Lao', 'Latin', 'Latvian', 'Letzeburgesch', 'Lingala', 'Lithuanian', 'Luxembourgish', 'Macedonian', 'Malagasy', 'Malay', 'Malayalam', 'Maltese', 'Maori', 'Marathi', 'Moldavian', 'Moldovan', 'Mongolian', 'Myanmar', 'Nepali', 'Norwegian', 'Nynorsk', 'Occitan', 'Panjabi', 'Pashto', 'Persian', 'Polish', 'Portuguese', 'Punjabi', 'Pushto', 'Romanian', 'Russian', 'Sanskrit', 'Serbian', 'Shona', 'Sindhi', 'Sinhala', 'Sinhalese', 'Slovak', 'Slovenian', 'Somali', 'Spanish', 'Sundanese', 'Swahili', 'Swedish', 'Tagalog', 'Tajik', 'Tamil', 'Tatar', 'Telugu', 'Thai', 'Tibetan', 'Turkish', 'Turkmen', 'Ukrainian', 'Urdu', 'Uzbek', 'Valencian', 'Vietnamese', 'Welsh', 'Yiddish', 'Yoruba']
+    # Supported languages
+    # ['Auto detection', 'Afrikaans', 'Albanian', 'Amharic', 'Arabic', 'Armenian', 'Assamese', 'Azerbaijani', 'Bashkir', 'Basque', 'Belarusian', 'Bengali', 'Bosnian', 'Breton', 'Bulgarian', 'Burmese', 'Castilian', 'Catalan', 'Chinese', 'Croatian', 'Czech', 'Danish', 'Dutch', 'English', 'Estonian', 'Faroese', 'Finnish', 'Flemish', 'French', 'Galician', 'Georgian', 'German', 'Greek', 'Gujarati', 'Haitian', 'Haitian Creole', 'Hausa', 'Hawaiian', 'Hebrew', 'Hindi', 'Hungarian', 'Icelandic', 'Indonesian', 'Italian', 'Japanese', 'Javanese', 'Kannada', 'Kazakh', 'Khmer', 'Korean', 'Lao', 'Latin', 'Latvian', 'Letzeburgesch', 'Lingala', 'Lithuanian', 'Luxembourgish', 'Macedonian', 'Malagasy', 'Malay', 'Malayalam', 'Maltese', 'Maori', 'Marathi', 'Moldavian', 'Moldovan', 'Mongolian', 'Myanmar', 'Nepali', 'Norwegian', 'Nynorsk', 'Occitan', 'Panjabi', 'Pashto', 'Persian', 'Polish', 'Portuguese', 'Punjabi', 'Pushto', 'Romanian', 'Russian', 'Sanskrit', 'Serbian', 'Shona', 'Sindhi', 'Sinhala', 'Sinhalese', 'Slovak', 'Slovenian', 'Somali', 'Spanish', 'Sundanese', 'Swahili', 'Swedish', 'Tagalog', 'Tajik', 'Tamil', 'Tatar', 'Telugu', 'Thai', 'Tibetan', 'Turkish', 'Turkmen', 'Ukrainian', 'Urdu', 'Uzbek', 'Valencian', 'Vietnamese', 'Welsh', 'Yiddish', 'Yoruba']
 
     def execute(self, context):
         try:
             import whisper
-            #from whisper.utils import write_srt
+
+            # from whisper.utils import write_srt
         except ModuleNotFoundError:
             import site
             import subprocess
@@ -452,20 +470,29 @@ class TEXT_OT_transcribe(bpy.types.Operator):
                 pass
             self.report({"INFO"}, "Installing: Whisper module.")
             print("Installing: Whisper module")
-            subprocess.check_call([pybin, "-m", "pip", "install", "git+https://github.com/openai/whisper.git", '--user'])
+            subprocess.check_call(
+                [
+                    pybin,
+                    "-m",
+                    "pip",
+                    "install",
+                    "git+https://github.com/openai/whisper.git",
+                    "--user",
+                ]
+            )
             try:
                 import whisper
-                #from whisper.utils import write_srt
-                #self.report({"INFO"}, "Detected: Whisper module.")
-                #print("Detected: Whisper module")
+
+                # from whisper.utils import write_srt
+                # self.report({"INFO"}, "Detected: Whisper module.")
+                # print("Detected: Whisper module")
             except ModuleNotFoundError:
                 print("Installation of the Whisper module failed")
                 self.report(
                     {"INFO"},
                     "Installing Whisper module failed! Try to run Blender as administrator.",
                 )
-                return {"CANCELLED"} 
-        
+                return {"CANCELLED"}
         current_scene = bpy.context.scene
         try:
             active = current_scene.sequence_editor.active_strip
@@ -479,41 +506,40 @@ class TEXT_OT_transcribe(bpy.types.Operator):
             self.report({"INFO"}, "Active strip is not a sound strip!")
             return {"CANCELLED"}
         offset = int(active.frame_start)
-        clip_start = int(active.frame_start+active.frame_offset_start)
-        clip_end = int(active.frame_start+active.frame_final_duration)#-active.frame_offset_end)
+        clip_start = int(active.frame_start + active.frame_offset_start)
+        clip_end = int(
+            active.frame_start + active.frame_final_duration
+        )  # -active.frame_offset_end)
 
         sound_path = bpy.path.abspath(active.sound.filepath)
         output_dir = os.path.dirname(sound_path)
         audio_basename = os.path.basename(sound_path)
-        
-        model = whisper.load_model("tiny") # or whatever model you prefer
+
+        model = whisper.load_model("tiny")  # or whatever model you prefer
         result = model.transcribe(sound_path)
-        
+
         transcribe = model.transcribe(sound_path)
-        segments = transcribe['segments']
+        segments = transcribe["segments"]
 
         out_dir = os.path.join(output_dir, audio_basename + ".srt")
         if os.path.exists(out_dir):
             os.remove(out_dir)
-
-        segmentId = 0 
+        segmentId = 0
         for segment in segments:
-            startTime = str(0)+str(timedelta(seconds=int(segment['start'])))+',000'
-            endTime = str(0)+str(timedelta(seconds=int(segment['end'])))+',000'
-            text = segment['text']
-            segmentId = (segment['id']+1)
-            segment = (f"{segmentId}\n{startTime} --> {endTime}\n{text[1:] if text[0] == ' ' else text}\n\n")
-            #srtFilename = out_dir + audio_basename + ".srt"
-            with open(out_dir, 'a', encoding='utf-8') as srtFile:
+            startTime = str(0) + str(timedelta(seconds=int(segment["start"]))) + ",000"
+            endTime = str(0) + str(timedelta(seconds=int(segment["end"]))) + ",000"
+            text = segment["text"]
+            segmentId = segment["id"] + 1
+            segment = f"{segmentId}\n{startTime} --> {endTime}\n{text[1:] if text[0] == ' ' else text}\n\n"
+            # srtFilename = out_dir + audio_basename + ".srt"
+            with open(out_dir, "a", encoding="utf-8") as srtFile:
                 srtFile.write(segment)
-
         # save SRT
-#        with open(out_dir, "w", encoding="utf-8") as srt:
-#            write_srt(result["segments"], file=srt)
-        #offset = 0
+        #        with open(out_dir, "w", encoding="utf-8") as srt:
+        #            write_srt(result["segments"], file=srt)
+        # offset = 0
         if os.path.exists(out_dir):
             load_subtitles(out_dir, context, offset)
-
         return {"FINISHED"}
 
 
@@ -680,14 +706,13 @@ class SEQUENCER_OT_import_subtitles(Operator, ImportHelper):
                 translator.quit()
                 print("Translating finished.")
                 self.report({"INFO"}, "Translating finished.")
- 
         file = self.filepath
         if self.do_translate:
             file = f"{os.path.splitext(file)[0]}_translated.srt"
         if not file:
             return {"CANCELLED"}
         offset = 0
-        load_subtitles(file, context, offset) 
+        load_subtitles(file, context, offset)
 
         return {"FINISHED"}
 
@@ -720,6 +745,123 @@ class SEQUENCER_PT_import_subtitles(bpy.types.Panel):
         col.prop(operator, "translate_from", text="From")
         col.prop(operator, "translate_to", text="To")
         col.active = operator.do_translate
+
+
+def frame_to_ms(frame):
+    """Converts a frame number to a time in milliseconds, taking the frame rate of the scene into account."""
+    scene = bpy.context.scene
+    fps = (
+        scene.render.fps / scene.render.fps_base
+    )  # Calculate the frame rate as frames per second.
+    ms_per_frame = 1000 / fps  # Calculate the number of milliseconds per frame.
+    return frame * ms_per_frame
+
+
+class SEQUENCER_OT_export_list_subtitles(Operator, ImportHelper):
+    """Export Subtitles"""
+
+    bl_idname = "sequencer.export_list_subtitles"
+    bl_label = "Export"
+    bl_options = {"REGISTER", "UNDO"}
+
+    filename_ext = [".srt", ".ass"]
+
+    filter_glob: StringProperty(
+        default="*.srt;*.ass;*.ssa;*.mpl2;*.tmp;*.vtt;*.microdvd;*.fountain",
+        options={"HIDDEN"},
+        maxlen=255,
+    )
+
+    formats: EnumProperty(
+        name="Formats",
+        description="Format to save as",
+        items=(
+            ("srt", "srt", "SubRip"),
+            ("ass", "ass", "SubStationAlpha"),
+            ("ssa", "ssa", "SubStationAlpha"),
+            ("mpl2", "mpl2", "MPL2"),
+            # ("tmp", "tmp", "TMP"),
+            ("vtt", "vtt", "WebVTT"),
+            ("microdvd", "microdvd", "MicroDVD"),
+            ("fountain", "fountain", "Fountain Screenplay"),
+        ),
+        default="srt",
+    )
+
+    def execute(self, context):
+        if not check_pysubs2(self):
+            return {"CANCELLED"}
+        # Get a list of all Text Strips in the VSE
+        text_strips = [
+            strip
+            for strip in bpy.context.scene.sequence_editor.sequences
+            if strip.type == "TEXT"
+        ]
+
+        # Sort the Subtitle Editor based on their start times in the timeline
+        text_strips.sort(key=lambda strip: strip.frame_start)
+
+        from pysubs2 import SSAFile, SSAEvent, make_time
+
+        file_name = self.filepath
+        if pathlib.Path(file_name).suffix != "." + self.formats:
+            file_name = self.filepath + "." + self.formats
+        if self.formats != "fountain":
+            subs = SSAFile()
+            # Iterate through the sorted text strips and add them to the list
+            for strip in text_strips:
+                event = SSAEvent()
+                event.start = frame_to_ms(strip.frame_final_start)
+                event.end = frame_to_ms(
+                    strip.frame_final_start + strip.frame_final_duration
+                )
+                event.text = strip.text
+                event.bold = strip.use_bold
+                event.italic = strip.use_italic
+                
+                subs.append(event)
+            text = subs.to_string(self.formats)
+#            if self.formats == "microdvd": #doesn't work
+#                subs.save(file_name, format_="microdvd", fps=(scene.render.fps / scene.render.fps_base))
+            if self.formats == "mpl2":
+                subs.save(file_name, format_="mpl2")
+            else:
+                subs.save(file_name)
+        else:
+            text = ""
+            # Iterate through the sorted text strips and add them to the list
+            for strip in text_strips:
+                text = text + strip.text + chr(10) + chr(13) + " " + chr(10) + chr(13)
+            fountain_file = open(file_name, "w")
+            fountain_file.write(text)
+            fountain_file.close()
+        return {"FINISHED"}
+
+    def draw(self, context):
+        pass
+
+
+class SEQUENCER_PT_export_list_subtitles(bpy.types.Panel):
+    bl_space_type = "FILE_BROWSER"
+    bl_region_type = "TOOL_PROPS"
+    bl_label = "File Formats"
+    bl_parent_id = "FILE_PT_operator"
+
+    @classmethod
+    def poll(cls, context):
+        sfile = context.space_data
+        operator = sfile.active_operator
+        return operator.bl_idname == "SEQUENCER_OT_export_list_subtitles"
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        sfile = context.space_data
+        operator = sfile.active_operator
+        layout = layout.column(heading="File Formats")
+        layout.prop(operator, "formats", text="Format")
 
 
 class SEQUENCER_OT_copy_textprops_to_selected(Operator):
@@ -785,7 +927,7 @@ class SEQUENCER_PT_panel(bpy.types.Panel):
         row.separator()
 
         row.operator("sequencer.import_subtitles", text="", icon="IMPORT")
-        row.operator("sequencer.export_subtitles", text="", icon="EXPORT")
+        row.operator("sequencer.export_list_subtitles", text="", icon="EXPORT")
 
         row.separator()
 
@@ -821,7 +963,8 @@ def copyto_panel_append(self, context):
         layout = self.layout
         layout.operator(SEQUENCER_OT_copy_textprops_to_selected.bl_idname)
 
-def setText(self,context):
+
+def setText(self, context):
     scene = context.scene
     current_index = context.scene.text_strip_items_index
     max_index = len(context.scene.text_strip_items) - 1
@@ -843,6 +986,8 @@ classes = (
     SEQUENCER_OT_insert_newline,
     SEQUENCER_OT_import_subtitles,
     SEQUENCER_PT_import_subtitles,
+    SEQUENCER_OT_export_list_subtitles,
+    SEQUENCER_PT_export_list_subtitles,
     SEQUENCER_OT_copy_textprops_to_selected,
     TEXT_OT_transcribe,
     SEQUENCER_PT_panel,
@@ -853,7 +998,9 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.Scene.text_strip_items = bpy.props.CollectionProperty(type=TextStripItem)
-    bpy.types.Scene.text_strip_items_index = bpy.props.IntProperty(name = "Index for Subtitle Editor", default = 0, update = setText)
+    bpy.types.Scene.text_strip_items_index = bpy.props.IntProperty(
+        name="Index for Subtitle Editor", default=0, update=setText
+    )
     bpy.types.SEQUENCER_MT_add.append(import_subtitles)
     bpy.types.SEQUENCER_MT_add.append(transcribe)
     bpy.types.SEQUENCER_PT_effect.append(copyto_panel_append)
