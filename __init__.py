@@ -79,7 +79,7 @@ def update_text(self, context):
 # Define a custom property group to hold the text strip name and text
 class TextStripItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty()
-    text: bpy.props.StringProperty(update=update_text)
+    text: bpy.props.StringProperty(update=update_text, options={'TEXTEDIT_UPDATE'})
     selected: bpy.props.IntProperty()
 
 
