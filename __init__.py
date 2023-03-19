@@ -58,28 +58,28 @@ def find_first_empty_channel(start_frame, end_frame):
 
 
 def update_text(self, context):
-    for strip in bpy.context.scene.sequence_editor.sequences[0:]:
+    for strip in bpy.context.scene.sequence_editor.sequences:
         if strip.type == "TEXT" and strip.name == self.name:
             # Update the text of the text strip
             strip.text = self.text
 
-            break
-        strip = get_strip_by_name(self.name)
-        if strip:
-            # Deselect all strips.
-            for seq in context.scene.sequence_editor.sequences_all:
-                seq.select = False
-            bpy.context.scene.sequence_editor.active_strip = strip
-            strip.select = True
+            get_strip = get_strip_by_name(self.name)
+            if get_strip:
+                # Deselect all strips.
+                for seq in context.scene.sequence_editor.sequences_all:
+                    seq.select = False
+                bpy.context.scene.sequence_editor.active_strip = strip
+                get_strip.select = True
 
-            # Set the current frame to the start frame of the active strip
-            bpy.context.scene.frame_set(int(strip.frame_start))
+                # Set the current frame to the start frame of the active strip
+                bpy.context.scene.frame_set(int(strip.frame_start))
+            break
 
 
 # Define a custom property group to hold the text strip name and text
 class TextStripItem(bpy.types.PropertyGroup):
     name: bpy.props.StringProperty()
-    text: bpy.props.StringProperty(update=update_text, options={'TEXTEDIT_UPDATE'})
+    text: bpy.props.StringProperty(update=update_text, options={"TEXTEDIT_UPDATE"})
     selected: bpy.props.IntProperty()
 
 
@@ -211,16 +211,86 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
 
 
 class SEQUENCER_OT_delete_strip(bpy.types.Operator):
-    """Remove item and strip"""
+    """Remove item and ripple delete within its range"""
 
     bl_idname = "text.delete_strip"
-    bl_label = "Remove Item & Strip"
+    bl_label = "Remove Item and Ripple Delete"
 
     @classmethod
     def poll(cls, context):
         index = context.scene.text_strip_items_index
         items = context.scene.text_strip_items
         selected = len(items) - 1 < index
+        return not selected and context.scene.sequence_editor is not None
+
+    def execute(self, context):
+        scene = context.scene
+        seq_editor = scene.sequence_editor
+        frame_org = scene.frame_current
+        index = context.scene.text_strip_items_index
+        items = context.scene.text_strip_items
+        if len(items) - 1 < index:
+            return {"CANCELLED"}
+        # Get the selected text strip from the UI list
+        strip_name = items[index].name
+        strip = get_strip_by_name(strip_name)
+        if strip:
+            # Select all strips
+            for seq in bpy.context.scene.sequence_editor.sequences_all:
+                seq.select = True
+            # Split out
+            scene.frame_current = strip.frame_final_start + strip.frame_final_duration
+            bpy.ops.sequencer.split(frame=scene.frame_current, type="SOFT", side="LEFT")
+
+            # Select all strips
+            for seq in bpy.context.scene.sequence_editor.sequences_all:
+                seq.select = True
+            # Split in
+            frame_current = scene.frame_current = strip.frame_final_start
+            bpy.ops.sequencer.split(frame=frame_current, type="SOFT", side="RIGHT")
+
+            # Deslect all
+            for s in bpy.context.scene.sequence_editor.sequences_all:
+                s.select = False
+            # Select all between in and out
+            frame_range = range(
+                strip.frame_final_start + 1,
+                strip.frame_final_start + strip.frame_final_duration,
+            )
+            for s in frame_range:
+                # scene.frame_current = s
+                for stri in bpy.context.scene.sequence_editor.sequences_all:
+                    if (
+                        stri.frame_final_start
+                        <= s
+                        <= stri.frame_final_start + stri.frame_final_duration
+                    ):
+                        stri.select = True
+            scene.frame_current = strip.frame_final_start + 1
+            bpy.ops.sequencer.delete()
+            bpy.ops.sequencer.gap_remove(all=True)
+
+            # Remove the UI list item
+            items.remove(index)
+        # Refresh the UIList
+        bpy.ops.text.refresh_list()
+
+        scene.frame_current = frame_org
+
+        return {"FINISHED"}
+
+
+class SEQUENCER_OT_delete_item(bpy.types.Operator):
+    """Remove strip and item from the list"""
+
+    bl_idname = "text.delete_item"
+    bl_label = "Remove Item and Strip"
+
+    @classmethod
+    def poll(cls, context):
+        index = context.scene.text_strip_items_index
+        items = context.scene.text_strip_items
+        selected = (len(items) - 1) < index
         return not selected and context.scene.sequence_editor is not None
 
     def execute(self, context):
@@ -280,6 +350,7 @@ class SEQUENCER_OT_select_previous(bpy.types.Operator):
         if current_index > 0:
             context.scene.text_strip_items_index -= 1
             selected_item = scene.text_strip_items[scene.text_strip_items_index]
+            print(selected_item)
             selected_item.select = True
             update_text(selected_item, context)
         return {"FINISHED"}
@@ -782,7 +853,7 @@ class SEQUENCER_OT_export_list_subtitles(Operator, ImportHelper):
             ("mpl2", "mpl2", "MPL2"),
             # ("tmp", "tmp", "TMP"),
             ("vtt", "vtt", "WebVTT"),
-            #("microdvd", "microdvd", "MicroDVD"),
+            # ("microdvd", "microdvd", "MicroDVD"),
             ("fountain", "fountain", "Fountain Screenplay"),
         ),
         default="srt",
@@ -818,11 +889,11 @@ class SEQUENCER_OT_export_list_subtitles(Operator, ImportHelper):
                 event.text = strip.text
                 event.bold = strip.use_bold
                 event.italic = strip.use_italic
-                
+
                 subs.append(event)
             text = subs.to_string(self.formats)
-#            if self.formats == "microdvd": #doesn't work
-#                subs.save(file_name, format_="microdvd", fps=(scene.render.fps / scene.render.fps_base))
+            #            if self.formats == "microdvd": #doesn't work
+            #                subs.save(file_name, format_="microdvd", fps=(scene.render.fps / scene.render.fps_base))
             if self.formats == "mpl2":
                 subs.save(file_name, format_="mpl2")
             else:
@@ -932,7 +1003,8 @@ class SEQUENCER_PT_panel(bpy.types.Panel):
         row.separator()
 
         row.operator("text.add_strip", text="", icon="ADD", emboss=True)
-        row.operator("text.delete_strip", text="", icon="REMOVE", emboss=True)
+        row.operator("text.delete_item", text="", icon="REMOVE", emboss=True)
+        row.operator("text.delete_strip", text="", icon="SCULPTMODE_HLT", emboss=True)
 
         row.separator()
 
@@ -967,7 +1039,7 @@ def copyto_panel_append(self, context):
 def setText(self, context):
     scene = context.scene
     current_index = context.scene.text_strip_items_index
-    max_index = len(context.scene.text_strip_items) - 1
+    max_index = len(context.scene.text_strip_items)
 
     if current_index < max_index:
         selected_item = scene.text_strip_items[scene.text_strip_items_index]
@@ -980,6 +1052,7 @@ classes = (
     SEQUENCER_UL_List,
     SEQUENCER_OT_refresh_list,
     SEQUENCER_OT_add_strip,
+    SEQUENCER_OT_delete_item,
     SEQUENCER_OT_delete_strip,
     SEQUENCER_OT_select_next,
     SEQUENCER_OT_select_previous,
