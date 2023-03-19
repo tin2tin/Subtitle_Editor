@@ -14,6 +14,7 @@ https://user-images.githubusercontent.com/1322593/223361423-36917ff0-2756-4e80-8
 * Edit subtitles in the list.
 * Search text across strips. 
 * Add and remove subtitles from the list.
+* Ripple delete the footage the subtitle line belongs to. 
 * Insert line breaks.
 * Copy text styling and font from active strip to all selected strips.
 
