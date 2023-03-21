@@ -412,9 +412,10 @@ def check_pysubs2(self):
     return True
 
 
-def load_subtitles(file, context, offset):
+def load_subtitles(self, file, context, offset):
     if not check_pysubs2(self):
         return {"CANCELLED"}
+    import pysubs2
     render = bpy.context.scene.render
     fps = render.fps / render.fps_base
     fps_conv = fps / 1000
@@ -610,7 +611,7 @@ class TEXT_OT_transcribe(bpy.types.Operator):
         #            write_srt(result["segments"], file=srt)
         # offset = 0
         if os.path.exists(out_dir):
-            load_subtitles(out_dir, context, offset)
+            load_subtitles(self, out_dir, context, offset)
         return {"FINISHED"}
 
 
@@ -783,7 +784,7 @@ class SEQUENCER_OT_import_subtitles(Operator, ImportHelper):
         if not file:
             return {"CANCELLED"}
         offset = 0
-        load_subtitles(file, context, offset)
+        load_subtitles(self, file, context, offset)
 
         return {"FINISHED"}
 
@@ -862,6 +863,7 @@ class SEQUENCER_OT_export_list_subtitles(Operator, ImportHelper):
     def execute(self, context):
         if not check_pysubs2(self):
             return {"CANCELLED"}
+        import pysubs2
         # Get a list of all Text Strips in the VSE
         text_strips = [
             strip
