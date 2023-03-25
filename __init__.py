@@ -29,7 +29,7 @@ bl_info = {
     "category": "Sequencer",
 }
 
-import os, sys, bpy, pathlib, re
+import os, sys, bpy, pathlib, re, ctypes, site, subprocess
 from bpy.types import Operator
 from bpy_extras.io_utils import ImportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
@@ -74,6 +74,78 @@ def update_text(self, context):
                 # Set the current frame to the start frame of the active strip
                 bpy.context.scene.frame_set(int(strip.frame_start))
             break
+
+
+def show_system_console(show):
+    # https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow
+    SW_HIDE = 0
+    SW_SHOW = 5
+
+    ctypes.windll.user32.ShowWindow(
+        ctypes.windll.kernel32.GetConsoleWindow(), SW_SHOW if show else SW_HIDE
+    )
+
+
+def set_system_console_topmost(top):
+    # https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos
+    HWND_NOTOPMOST = -2
+    HWND_TOPMOST = -1
+    HWND_TOP = 0
+    SWP_NOMOVE = 0x0002
+    SWP_NOSIZE = 0x0001
+    SWP_NOZORDER = 0x0004
+
+    ctypes.windll.user32.SetWindowPos(
+        ctypes.windll.kernel32.GetConsoleWindow(),
+        HWND_TOP if top else HWND_NOTOPMOST,
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
+    )
+
+
+#def ensure_pip(self):
+app_path = site.USER_SITE
+if app_path not in sys.path:
+    sys.path.append(app_path)
+pybin = sys.executable
+
+print("Ensuring: pip")
+try:
+    subprocess.call([pybin, "-m", "ensurepip"])
+    #subprocess.call([pybin, "-m", "pip", "install", "--upgrade","pip"])
+except ImportError:
+    print("Pip installation failed!")
+    #return False
+#return True
+
+
+def import_module(self, module, install_module):
+    show_system_console(True)
+    set_system_console_topmost(True)
+    module = str(module)
+    try:
+        exec("import " + module)
+    except ModuleNotFoundError:
+        app_path = site.USER_SITE
+        if app_path not in sys.path:
+            sys.path.append(app_path)
+        pybin = sys.executable
+
+        self.report({"INFO"}, "Installing: " + module + " module.")
+        print("Installing: " + module + " module")
+        subprocess.check_call([pybin, "-m", "pip", "install", install_module, "--user"])
+        try:
+            exec("import " + module)
+        except ModuleNotFoundError:
+            self.report({"INFO"}, "Not found: " + module + " module.")
+            print("Not found: " + module + " module")            
+            return False
+    #show_system_console(True)
+    #set_system_console_topmost(False)
+    return True
 
 
 # Define a custom property group to hold the text strip name and text
@@ -379,41 +451,9 @@ class SEQUENCER_OT_insert_newline(bpy.types.Operator):
         return {"FINISHED"}
 
 
-def check_pysubs2(self):
-    try:
-        import pysubs2
-    except ModuleNotFoundError:
-        import site
-        import subprocess
-        import sys
-
-        app_path = site.USER_SITE
-        if app_path not in sys.path:
-            sys.path.append(app_path)
-        pybin = sys.executable  # bpy.app.binary_path_python # Use for 2.83
-
-        print("Ensuring: pip")
-        try:
-            subprocess.call([pybin, "-m", "ensurepip"])
-        except ImportError:
-            pass
-        self.report({"INFO"}, "Installing: pysubs2 module.")
-        print("Installing: pysubs2 module")
-        subprocess.check_call([pybin, "-m", "pip", "install", "pysubs2"])
-        try:
-            import pysubs2
-        except ModuleNotFoundError:
-            print("Installation of the pysubs2 module failed")
-            self.report(
-                {"INFO"},
-                "Installing pysubs2 module failed! Try to run Blender as administrator.",
-            )
-            return False
-    return True
-
-
 def load_subtitles(self, file, context, offset):
-    if not check_pysubs2(self):
+
+    if not import_module(self, "pysubs2", "pysubs2"):
         return {"CANCELLED"}
     import pysubs2
     render = bpy.context.scene.render
@@ -522,49 +562,9 @@ class TEXT_OT_transcribe(bpy.types.Operator):
     # ['Auto detection', 'Afrikaans', 'Albanian', 'Amharic', 'Arabic', 'Armenian', 'Assamese', 'Azerbaijani', 'Bashkir', 'Basque', 'Belarusian', 'Bengali', 'Bosnian', 'Breton', 'Bulgarian', 'Burmese', 'Castilian', 'Catalan', 'Chinese', 'Croatian', 'Czech', 'Danish', 'Dutch', 'English', 'Estonian', 'Faroese', 'Finnish', 'Flemish', 'French', 'Galician', 'Georgian', 'German', 'Greek', 'Gujarati', 'Haitian', 'Haitian Creole', 'Hausa', 'Hawaiian', 'Hebrew', 'Hindi', 'Hungarian', 'Icelandic', 'Indonesian', 'Italian', 'Japanese', 'Javanese', 'Kannada', 'Kazakh', 'Khmer', 'Korean', 'Lao', 'Latin', 'Latvian', 'Letzeburgesch', 'Lingala', 'Lithuanian', 'Luxembourgish', 'Macedonian', 'Malagasy', 'Malay', 'Malayalam', 'Maltese', 'Maori', 'Marathi', 'Moldavian', 'Moldovan', 'Mongolian', 'Myanmar', 'Nepali', 'Norwegian', 'Nynorsk', 'Occitan', 'Panjabi', 'Pashto', 'Persian', 'Polish', 'Portuguese', 'Punjabi', 'Pushto', 'Romanian', 'Russian', 'Sanskrit', 'Serbian', 'Shona', 'Sindhi', 'Sinhala', 'Sinhalese', 'Slovak', 'Slovenian', 'Somali', 'Spanish', 'Sundanese', 'Swahili', 'Swedish', 'Tagalog', 'Tajik', 'Tamil', 'Tatar', 'Telugu', 'Thai', 'Tibetan', 'Turkish', 'Turkmen', 'Ukrainian', 'Urdu', 'Uzbek', 'Valencian', 'Vietnamese', 'Welsh', 'Yiddish', 'Yoruba']
 
     def execute(self, context):
-        try:
-            import whisper
+        import_module(self, "whisper", "git+https://github.com/openai/whisper.git") # "openai_whisper"):#
+        import whisper
 
-            # from whisper.utils import write_srt
-        except ModuleNotFoundError:
-            import site
-            import subprocess
-            import sys
-
-            app_path = site.USER_SITE
-            if app_path not in sys.path:
-                sys.path.append(app_path)
-            pybin = sys.executable
-
-            try:
-                subprocess.call([pybin, "-m", "ensurepip"])
-            except ImportError:
-                pass
-            self.report({"INFO"}, "Installing: Whisper module.")
-            print("Installing: Whisper module")
-            subprocess.check_call(
-                [
-                    pybin,
-                    "-m",
-                    "pip",
-                    "install",
-                    "git+https://github.com/openai/whisper.git",
-                    "--user",
-                ]
-            )
-            try:
-                import whisper
-
-                # from whisper.utils import write_srt
-                # self.report({"INFO"}, "Detected: Whisper module.")
-                # print("Detected: Whisper module")
-            except ModuleNotFoundError:
-                print("Installation of the Whisper module failed")
-                self.report(
-                    {"INFO"},
-                    "Installing Whisper module failed! Try to run Blender as administrator.",
-                )
-                return {"CANCELLED"}
         current_scene = bpy.context.scene
         try:
             active = current_scene.sequence_editor.active_strip
@@ -725,45 +725,16 @@ class SEQUENCER_OT_import_subtitles(Operator, ImportHelper):
 
     def execute(self, context):
         if self.do_translate:
-            try:
-                from srtranslator import SrtFile
-                from srtranslator.translators.deepl import DeeplTranslator
-            except ModuleNotFoundError:
-                import site
-                import subprocess
-                import sys
-
-                app_path = site.USER_SITE
-                if app_path not in sys.path:
-                    sys.path.append(app_path)
-                pybin = sys.executable  # bpy.app.binary_path_python # Use for 2.83
-
-                print("Ensuring: pip")
-                try:
-                    subprocess.call([pybin, "-m", "ensurepip"])
-                except ImportError:
-                    pass
-                self.report({"INFO"}, "Installing: srtranslator module.")
-                print("Installing: srtranslator module")
-                subprocess.check_call([pybin, "-m", "pip", "install", "srtranslator"])
-                try:
-                    from srtranslator import SrtFile
-                    from srtranslator.translators.deepl import DeeplTranslator
-
-                    self.report({"INFO"}, "Detected: srtranslator module.")
-                    print("Detected: srtranslator module")
-                except ModuleNotFoundError:
-                    print("Installation of the srtranslator module failed")
-                    self.report(
-                        {"INFO"},
-                        "Installing srtranslator module failed! Try to run Blender as administrator.",
-                    )
-                    return {"CANCELLED"}
+            #ensure_pip(self)
+            if not import_module(self, "srtranslator", "srtranslator"):
+                return {"CANCELLED"}
             file = self.filepath
             if not file:
                 return {"CANCELLED"}
                 print("Invalid file")
                 self.report({"INFO"}, "Invalid file")
+            from srtranslator import SrtFile
+            from srtranslator.translators.deepl import DeeplTranslator
             translator = DeeplTranslator()
             if pathlib.Path(file).is_file():
                 print("Translating. Please Wait.")
@@ -861,7 +832,8 @@ class SEQUENCER_OT_export_list_subtitles(Operator, ImportHelper):
     )
 
     def execute(self, context):
-        if not check_pysubs2(self):
+        #ensure_pip(self)
+        if not import_module(self, "pysubs2", "pysubs2"):
             return {"CANCELLED"}
         import pysubs2
         # Get a list of all Text Strips in the VSE
