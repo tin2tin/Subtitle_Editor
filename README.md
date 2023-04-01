@@ -17,6 +17,8 @@ https://user-images.githubusercontent.com/1322593/223361423-36917ff0-2756-4e80-8
 * Ripple delete the footage the subtitle line belongs to. 
 * Insert line breaks.
 * Copy text styling and font from active strip to all selected strips.
+* Change Whisper model under Preferences.
+* System Console pop-up when doing file-related processing.
 
 ## Installation
 Download the [zip](https://github.com/tin2tin/subtitle_editor/archive/refs/heads/main.zip) and install.
@@ -32,6 +34,10 @@ https://user-images.githubusercontent.com/1322593/223356195-73ffebea-143d-4d36-8
 ## Translation
 
 https://user-images.githubusercontent.com/1322593/223357037-8ff2a9c8-9ce3-410d-a344-ec2a64448883.mp4
+
+## Preferences
+
+![image](https://user-images.githubusercontent.com/1322593/229266954-d5397992-7299-4157-b136-47fd3ecc8037.png)
 
 ## Modules used
 * [pysubs2](https://github.com/tkarabela/pysubs2)
