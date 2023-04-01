@@ -452,7 +452,7 @@ class SEQUENCER_OT_insert_newline(bpy.types.Operator):
 
 
 def load_subtitles(self, file, context, offset):
-
+    print("Please wait. Checking pysubs2 module...")
     if not import_module(self, "pysubs2", "pysubs2"):
         return {"CANCELLED"}
     import pysubs2
@@ -548,6 +548,33 @@ def check_overlap(strip1, start, end):
     ) <= int(end)
 
 
+# Define the options for the enum
+load_models = [
+    ("TINY", "Tiny", "Use the tiny model"),
+    ("BASE", "Base", "Use the base model"),
+    ("SMALL", "Small", "Use the small model"),
+    ("MEDIUM", "Medium", "Use the medium model"),
+    ("LARGE", "Large", "Use the large model"),
+]
+
+# Define the preferences class
+class subtitle_preferences(bpy.types.AddonPreferences):
+    bl_idname = __name__
+    
+    # Add the enum option to the preferences
+    load_model: bpy.props.EnumProperty(
+        name="Model",
+        description="Choose the model. And expect higher load times.",
+        items=load_models,
+        default="TINY",
+    )
+    
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "load_model")
+
+
+
 class TEXT_OT_transcribe(bpy.types.Operator):
     bl_idname = "text.transcribe"
     bl_label = "Transcription"
@@ -562,7 +589,10 @@ class TEXT_OT_transcribe(bpy.types.Operator):
     # ['Auto detection', 'Afrikaans', 'Albanian', 'Amharic', 'Arabic', 'Armenian', 'Assamese', 'Azerbaijani', 'Bashkir', 'Basque', 'Belarusian', 'Bengali', 'Bosnian', 'Breton', 'Bulgarian', 'Burmese', 'Castilian', 'Catalan', 'Chinese', 'Croatian', 'Czech', 'Danish', 'Dutch', 'English', 'Estonian', 'Faroese', 'Finnish', 'Flemish', 'French', 'Galician', 'Georgian', 'German', 'Greek', 'Gujarati', 'Haitian', 'Haitian Creole', 'Hausa', 'Hawaiian', 'Hebrew', 'Hindi', 'Hungarian', 'Icelandic', 'Indonesian', 'Italian', 'Japanese', 'Javanese', 'Kannada', 'Kazakh', 'Khmer', 'Korean', 'Lao', 'Latin', 'Latvian', 'Letzeburgesch', 'Lingala', 'Lithuanian', 'Luxembourgish', 'Macedonian', 'Malagasy', 'Malay', 'Malayalam', 'Maltese', 'Maori', 'Marathi', 'Moldavian', 'Moldovan', 'Mongolian', 'Myanmar', 'Nepali', 'Norwegian', 'Nynorsk', 'Occitan', 'Panjabi', 'Pashto', 'Persian', 'Polish', 'Portuguese', 'Punjabi', 'Pushto', 'Romanian', 'Russian', 'Sanskrit', 'Serbian', 'Shona', 'Sindhi', 'Sinhala', 'Sinhalese', 'Slovak', 'Slovenian', 'Somali', 'Spanish', 'Sundanese', 'Swahili', 'Swedish', 'Tagalog', 'Tajik', 'Tamil', 'Tatar', 'Telugu', 'Thai', 'Tibetan', 'Turkish', 'Turkmen', 'Ukrainian', 'Urdu', 'Uzbek', 'Valencian', 'Vietnamese', 'Welsh', 'Yiddish', 'Yoruba']
 
     def execute(self, context):
+        print("Please wait. Checking torch & whisper modules...")
+        import_module(self, "torch", "torch==2.0.0")
         import_module(self, "whisper", "git+https://github.com/openai/whisper.git") # "openai_whisper"):#
+ # "openai_whisper"):#
         import whisper
 
         current_scene = bpy.context.scene
@@ -587,7 +617,9 @@ class TEXT_OT_transcribe(bpy.types.Operator):
         output_dir = os.path.dirname(sound_path)
         audio_basename = os.path.basename(sound_path)
 
-        model = whisper.load_model("tiny")  # or whatever model you prefer
+        print("Please wait. Processing file...")
+        load_model = context.preferences.addons[__name__].preferences.load_model
+        model = whisper.load_model(load_model.lower())
         result = model.transcribe(sound_path)
 
         transcribe = model.transcribe(sound_path)
@@ -726,6 +758,7 @@ class SEQUENCER_OT_import_subtitles(Operator, ImportHelper):
     def execute(self, context):
         if self.do_translate:
             #ensure_pip(self)
+            print("Please wait. Checking srttranslator module...")
             if not import_module(self, "srtranslator", "srtranslator"):
                 return {"CANCELLED"}
             file = self.filepath
@@ -833,6 +866,7 @@ class SEQUENCER_OT_export_list_subtitles(Operator, ImportHelper):
 
     def execute(self, context):
         #ensure_pip(self)
+        print("Please wait. Checking pysubs2 module...")
         if not import_module(self, "pysubs2", "pysubs2"):
             return {"CANCELLED"}
         import pysubs2
@@ -1022,6 +1056,7 @@ def setText(self, context):
 
 
 classes = (
+    subtitle_preferences,
     TextStripItem,
     SEQUENCER_UL_List,
     SEQUENCER_OT_refresh_list,
