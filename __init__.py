@@ -29,12 +29,12 @@ bl_info = {
     "category": "Sequencer",
 }
 
-import os, sys, bpy, pathlib, re, ctypes, site, subprocess
+import os, sys, bpy, pathlib, re, ctypes, site, subprocess, platform
 from bpy.types import Operator
 from bpy_extras.io_utils import ImportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
 from datetime import timedelta
-
+os_platform = platform.system()  # 'Linux', 'Darwin', 'Java', 'Windows'
 
 def get_strip_by_name(name):
     for strip in bpy.context.scene.sequence_editor.sequences[0:]:
@@ -77,33 +77,36 @@ def update_text(self, context):
 
 
 def show_system_console(show):
-    # https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow
-    SW_HIDE = 0
-    SW_SHOW = 5
+    if os_platform == "Windows":
+        # https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow
+        SW_HIDE = 0
+        SW_SHOW = 5
 
-    ctypes.windll.user32.ShowWindow(
-        ctypes.windll.kernel32.GetConsoleWindow(), SW_SHOW if show else SW_HIDE
-    )
+        ctypes.windll.user32.ShowWindow(
+            ctypes.windll.kernel32.GetConsoleWindow(), SW_SHOW #if show else SW_HIDE
+        )
 
 
 def set_system_console_topmost(top):
-    # https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos
-    HWND_NOTOPMOST = -2
-    HWND_TOPMOST = -1
-    HWND_TOP = 0
-    SWP_NOMOVE = 0x0002
-    SWP_NOSIZE = 0x0001
-    SWP_NOZORDER = 0x0004
+    if os_platform == "Windows":
+        # https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos
+        HWND_NOTOPMOST = -2
+        HWND_TOPMOST = -1
+        HWND_TOP = 0
+        SWP_NOMOVE = 0x0002
+        SWP_NOSIZE = 0x0001
+        SWP_NOZORDER = 0x0004
 
-    ctypes.windll.user32.SetWindowPos(
-        ctypes.windll.kernel32.GetConsoleWindow(),
-        HWND_TOP if top else HWND_NOTOPMOST,
-        0,
-        0,
-        0,
-        0,
-        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
-    )
+        ctypes.windll.user32.SetWindowPos(
+            ctypes.windll.kernel32.GetConsoleWindow(),
+            HWND_TOP if top else HWND_NOTOPMOST,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
+        )
+
 
 
 #def ensure_pip(self):
@@ -136,7 +139,7 @@ def import_module(self, module, install_module):
 
         self.report({"INFO"}, "Installing: " + module + " module.")
         print("Installing: " + module + " module")
-        subprocess.check_call([pybin, "-m", "pip", "install", install_module, "--user"])
+        subprocess.check_call([pybin, "-m", "pip", "install", install_module, "--user", "--no-warn-script-location"])
         try:
             exec("import " + module)
         except ModuleNotFoundError:
@@ -590,9 +593,35 @@ class TEXT_OT_transcribe(bpy.types.Operator):
 
     def execute(self, context):
         print("Please wait. Checking torch & whisper modules...")
-        import_module(self, "torch", "torch==2.0.0")
+        #import_module(self, "torch", "torch==2.0.0")
+
+        if os_platform == "Windows":
+            subprocess.check_call(
+                [
+                    pybin,
+                    "-m",
+                    "pip",
+                    "install",
+                    "torch",
+                    "--index-url",
+                    "https://download.pytorch.org/whl/cu118",
+                    "--no-warn-script-location",
+                    "--user",
+                ]
+            )
+        else:
+             subprocess.check_call(
+                [
+                    pybin,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--no-warn-script-location",
+                    "--user",
+                ]
+            )           
+
         import_module(self, "whisper", "git+https://github.com/openai/whisper.git") # "openai_whisper"):#
- # "openai_whisper"):#
         import whisper
 
         current_scene = bpy.context.scene
