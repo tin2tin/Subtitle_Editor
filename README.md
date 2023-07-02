@@ -21,8 +21,11 @@ https://user-images.githubusercontent.com/1322593/223361423-36917ff0-2756-4e80-8
 * System Console pop-up when doing file-related processing.
 
 ## Installation
-Download the [zip](https://github.com/tin2tin/subtitle_editor/archive/refs/heads/main.zip) and install.
-(If the python modules fail to install, run Blender as administrator, and then run the add-on)
+(As for Linux and MacOS, if anything differs in installation, then please share instructions.)
+* First you must download and install git for your platform: https://git-scm.com/downloads
+* Download the add-on: [zip](https://github.com/tin2tin/subtitle_editor/archive/refs/heads/main.zip)
+* On Windows, right click on the Blender icon and "Run Blender as Administrator"(or you'll get write permission errors).
+* Install the add-on as usual: Preferences > Add-ons > Install > select file > enable the add-on.
 
 ## Where?
 In the Sequencer sidebar, the Subtitle Editor tab can be found. Most functions are there, however the function for copying style properties can be found in the Text Strip tab and in the Add menu import Subtitles and Transcription can be found.
