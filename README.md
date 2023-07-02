@@ -27,6 +27,11 @@ https://user-images.githubusercontent.com/1322593/223361423-36917ff0-2756-4e80-8
 * On Windows, right click on the Blender icon and "Run Blender as Administrator"(or you'll get write permission errors).
 * Install the add-on as usual: Preferences > Add-ons > Install > select file > enable the add-on.
 
+Tip           |
+:------------- |
+If any python modules are missing, use this add-on to manually install them:      |
+https://github.com/amb/blender_pip      |
+
 ## Where?
 In the Sequencer sidebar, the Subtitle Editor tab can be found. Most functions are there, however the function for copying style properties can be found in the Text Strip tab and in the Add menu import Subtitles and Transcription can be found.
 
