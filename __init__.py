@@ -616,6 +616,7 @@ class TEXT_OT_transcribe(bpy.types.Operator):
                     "-m",
                     "pip",
                     "install",
+                    "torch",
                     "--no-warn-script-location",
                     "--user",
                 ]
