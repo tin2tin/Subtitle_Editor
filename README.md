@@ -2,6 +2,10 @@
 
 A suite of tools to empower working with subtitles/text strips in the Blender Video Sequence Editor. Highlights are multi-language auto-transcription of subtitles, import & export of subtitles, subtitle translation to multiple languages, batch changing of text styles and convenient list editing and navigation of subtitles.
 
+#DES
+
+this is a fork from subtitle editor(https://github.com/tin2tin/Subtitle_Editor),add a new function which can make subtitle to 3d mesh.
+
 ## Tutorial
 
 https://user-images.githubusercontent.com/1322593/223361423-36917ff0-2756-4e80-8c29-ce83096bf085.mp4
@@ -23,7 +27,7 @@ https://user-images.githubusercontent.com/1322593/223361423-36917ff0-2756-4e80-8
 ## Installation
 (As for Linux and MacOS, if anything differs in installation, then please share instructions.)
 * First you must download and install git for your platform: https://git-scm.com/downloads
-* Download the add-on: [zip](https://github.com/tin2tin/subtitle_editor/archive/refs/heads/main.zip)
+* Download the add-on: [zip](https://github.com/darkicerain/subtitle_editor/archive/refs/heads/main.zip)
 * On Windows, right click on the Blender icon and "Run Blender as Administrator"(or you'll get write permission errors).
 * Install the add-on as usual: Preferences > Add-ons > Install > select file > enable the add-on.
 
