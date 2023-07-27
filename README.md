@@ -4,7 +4,7 @@ A suite of tools to empower working with subtitles/text strips in the Blender Vi
 
 #DES
 
-this is a fork from subtitle editor(https://github.com/tin2tin/Subtitle_Editor),add a new function which can make subtitle to 3d mesh.
+this is a fork from subtitle editor(https://github.com/tin2tin/Subtitle_Editor), add a new function which can make subtitle to 3d mesh.
 
 ## Tutorial
 
