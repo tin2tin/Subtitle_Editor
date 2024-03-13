@@ -797,7 +797,7 @@ class SEQUENCER_OT_import_subtitles(Operator, ImportHelper):
                 print("Invalid file")
                 self.report({"INFO"}, "Invalid file")
             from srtranslator import SrtFile
-            from srtranslator.translators.deepl import DeeplTranslator
+            from srtranslator.translators.deepl_scrap import DeeplTranslator
             translator = DeeplTranslator()
             if pathlib.Path(file).is_file():
                 print("Translating. Please Wait.")
