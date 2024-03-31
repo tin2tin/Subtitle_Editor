@@ -624,6 +624,7 @@ class TEXT_OT_transcribe(bpy.types.Operator):
 
         import_module(self, "whisper", "git+https://github.com/openai/whisper.git") # "openai_whisper"):#
         import whisper
+        from whisper.utils import get_writer
 
         current_scene = bpy.context.scene
         try:
@@ -652,17 +653,25 @@ class TEXT_OT_transcribe(bpy.types.Operator):
         model = whisper.load_model(load_model.lower())
         result = model.transcribe(sound_path)
 
-        transcribe = model.transcribe(sound_path)
+        transcribe = model.transcribe(sound_path) #, word_timestamps=True
         segments = transcribe["segments"]
 
         out_dir = os.path.join(output_dir, audio_basename + ".srt")
         if os.path.exists(out_dir):
             os.remove(out_dir)
+
+#        srt_writer = get_writer("srt", ".")
+#        srt_writer(transcribe, out_dir, {"max_line_width":42, "max_line_count":2})    
+            
         segmentId = 0
         for segment in segments:
             startTime = str(0) + str(timedelta(seconds=int(segment["start"]))) + ",000"
             endTime = str(0) + str(timedelta(seconds=int(segment["end"]))) + ",000"
             text = segment["text"]
+            text = text.strip()
+            text = "..." + text if text and not text[0].isupper() else text
+            text = text + "..." if text[-1] not in [".",","] else text
+            
             segmentId = segment["id"] + 1
             segment = f"{segmentId}\n{startTime} --> {endTime}\n{text[1:] if text[0] == ' ' else text}\n\n"
             # srtFilename = out_dir + audio_basename + ".srt"
