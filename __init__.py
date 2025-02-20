@@ -21,7 +21,7 @@ bl_info = {
     "description": "Displays a list of all Subtitle Editor in the VSE and allows editing of their text.",
     "author": "tintwotin",
     "version": (1, 0),
-    "blender": (3, 0, 0),
+    "blender": (4, 4, 0),
     "location": "Sequencer > Side Bar > Subtitle Editor Tab",
     "warning": "",
     "doc_url": "",
@@ -108,27 +108,25 @@ def set_system_console_topmost(top):
         )
 
 
-
-#def ensure_pip(self):
-app_path = site.USER_SITE
-if app_path not in sys.path:
-    sys.path.append(app_path)
-pybin = sys.executable
-
-print("Ensuring: pip")
-try:
-    subprocess.call([pybin, "-m", "ensurepip"])
-    #subprocess.call([pybin, "-m", "pip", "install", "--upgrade","pip"])
-except ImportError:
-    print("Pip installation failed!")
-    #return False
-#return True
-
-
 def import_module(self, module, install_module):
     show_system_console(True)
     set_system_console_topmost(True)
     module = str(module)
+
+    # Get the path of the Python executable (e.g., python.exe)
+    python_exe_dir = os.path.dirname(os.__file__)
+    # Construct the path to the site-packages directory
+    #site_packages_dir = os.path.join(python_exe_dir, 'lib', 'site-packages')
+    site_packages_dir = os.path.join(python_exe_dir, 'lib', 'site-packages') if os.name == 'nt' else os.path.join(python_exe_dir, 'lib', 'python3.x', 'site-packages')        
+    # Add the site-packages directory to the top of sys.path
+    sys.path.insert(0, site_packages_dir)
+    
+    #def ensure_pip(self):
+    app_path = site.USER_SITE
+    if app_path not in sys.path:
+        sys.path.append(app_path)
+    pybin = sys.executable
+
     try:
         exec("import " + module)
     except ModuleNotFoundError:
@@ -139,7 +137,7 @@ def import_module(self, module, install_module):
 
         self.report({"INFO"}, "Installing: " + module + " module.")
         print("Installing: " + module + " module")
-        subprocess.check_call([pybin, "-m", "pip", "install", install_module, "--user", "--no-warn-script-location"])
+        subprocess.call([pybin, "-m", "pip", "install", install_module, "--no-warn-script-location"]) #"--user",  , '--target', site_packages_dir
         try:
             exec("import " + module)
         except ModuleNotFoundError:
@@ -172,7 +170,9 @@ class SEQUENCER_OT_refresh_list(bpy.types.Operator):
     bl_idname = "text.refresh_list"
     bl_label = "Refresh List"
 
+
     def execute(self, context):
+        
         active = context.scene.sequence_editor.active_strip
         # Clear the list
         context.scene.text_strip_items.clear()
@@ -250,8 +250,8 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
                 new_strip.use_box = strip.use_box
                 new_strip.box_margin = strip.box_margin
                 new_strip.location = strip.location
-                new_strip.align_x = strip.align_x
-                new_strip.align_y = strip.align_y
+                new_strip.anchor_x = strip.anchor_x
+                new_strip.anchor_y = strip.anchor_y
                 context.scene.sequence_editor.active_strip = new_strip
             self.report({"INFO"}, "Copying settings from the selected item")
         else:
@@ -270,8 +270,8 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
             new_strip.wrap_width = 0.68
             new_strip.font_size = 44
             new_strip.location[1] = 0.25
-            new_strip.align_x = "CENTER"
-            new_strip.align_y = "TOP"
+            new_strip.anchor_x = "CENTER"
+            new_strip.anchor_y = "TOP"
             new_strip.use_shadow = True
             new_strip.use_box = True
             context.scene.sequence_editor.active_strip = new_strip
@@ -455,10 +455,20 @@ class SEQUENCER_OT_insert_newline(bpy.types.Operator):
 
 
 def load_subtitles(self, file, context, offset):
+    
+    #def ensure_pip(self):
+    app_path = site.USER_SITE
+    if app_path not in sys.path:
+        sys.path.append(app_path)
+    pybin = sys.executable
+    
     print("Please wait. Checking pysubs2 module...")
+
     if not import_module(self, "pysubs2", "pysubs2"):
         return {"CANCELLED"}
+    
     import pysubs2
+
     render = bpy.context.scene.render
     fps = render.fps / render.fps_base
     fps_conv = fps / 1000
@@ -480,12 +490,12 @@ def load_subtitles(self, file, context, offset):
             print("Unable to extract subtitles from file")
             self.report({"INFO"}, "Unable to extract subtitles from file")
             return {"CANCELLED"}
-    try:
-        subs = pysubs2.load(file, fps=fps, encoding="utf-8")
-    except:
-        print("Import failed. Text encoding must be in UTF-8.")
-        self.report({"INFO"}, "Import failed. Text encoding must be in UTF-8.")
-        return {"CANCELLED"}
+    #try:
+    subs = pysubs2.load(file, fps=fps, encoding="utf-8")
+#    except:
+#        print("Import failed. Text encoding must be in UTF-8.")
+#        self.report({"INFO"}, "Import failed. Text encoding must be in UTF-8.")
+#        return {"CANCELLED"}
     if not subs:
         print("No file imported.")
         self.report({"INFO"}, "No file imported")
@@ -496,6 +506,12 @@ def load_subtitles(self, file, context, offset):
         position = False
         pos = []
         line.text = line.text.replace("\\N", "\n")
+        print(line.text)
+        print(line.start)
+        print(line.end)
+        
+        if line.start == line.end or not line.end:
+            line.end = line.start + 100
         if r"<i>" in line.text or r"{\i1}" in line.text or r"{\i0}" in line.text:
             italics = True
             line.text = line.text.replace("<i>", "")
@@ -516,29 +532,30 @@ def load_subtitles(self, file, context, offset):
             y = (render.resolution_y - int(pos[1])) / render.resolution_y
             position = True
             line.text = re.sub(r"{.+?}", "", line.text)
-        new_strip = editor.sequences.new_effect(
-            name=line.text,
-            type="TEXT",
-            channel=addSceneChannel,
-            frame_start=int(line.start * fps_conv) + offset,
-            frame_end=int(line.end * fps_conv) + offset,
-        )
-        new_strip.text = line.text
-        new_strip.wrap_width = 0.68
-        new_strip.font_size = 44
-        new_strip.location[1] = 0.25
-        new_strip.align_x = "CENTER"
-        new_strip.align_y = "TOP"
-        new_strip.use_shadow = True
-        new_strip.use_box = True
-        if position:
-            new_strip.location[0] = x
-            new_strip.location[1] = y
-            new_strip.align_x = "LEFT"
-        if italics:
-            new_strip.use_italic = True
-        if bold:
-            new_strip.use_bold = True
+        if line.text and line.start and line.end:
+            new_strip = editor.sequences.new_effect(
+                name=line.text,
+                type="TEXT",
+                channel=addSceneChannel,
+                frame_start=int(line.start * fps_conv) + offset,
+                frame_end=int(line.end * fps_conv) + offset,
+            )
+            new_strip.text = line.text
+            new_strip.wrap_width = 0.68
+            new_strip.font_size = 44
+            new_strip.location[1] = 0.25
+            new_strip.anchor_x = "CENTER"
+            new_strip.anchor_y = "TOP"
+            new_strip.use_shadow = True
+            new_strip.use_box = True
+            if position:
+                new_strip.location[0] = x
+                new_strip.location[1] = y
+                new_strip.anchor_x = "LEFT"
+            if italics:
+                new_strip.use_italic = True
+            if bold:
+                new_strip.use_bold = True
     # Refresh the UIList
     bpy.ops.text.refresh_list()
 
@@ -558,6 +575,8 @@ load_models = [
     ("SMALL", "Small", "Use the small model"),
     ("MEDIUM", "Medium", "Use the medium model"),
     ("LARGE", "Large", "Use the large model"),
+    ("LARGE-V2", "Large v.2", "Use the large v2 model"),
+    ("LARGE-V3", "Large v.3", "Use the large v3 model"),
 ]
 
 # Define the preferences class
@@ -577,6 +596,25 @@ class subtitle_preferences(bpy.types.AddonPreferences):
         layout.prop(self, "load_model")
 
 
+#def format_srt_time(seconds):
+#    """Convert precise seconds (float) to SRT format HH:MM:SS,mmm"""
+#    milliseconds = int(seconds * 1000)  # Convert to milliseconds
+#    td = timedelta(milliseconds=milliseconds)
+#    return str(td)[:-3].replace(".", ",")  # Format as HH:MM:SS,mmm
+
+
+def format_srt_time(ms):
+    """Convert milliseconds to SRT format HH:MM:SS,mmm"""
+    td = timedelta(milliseconds=int(ms))
+    return f"{int(td.total_seconds() // 3600):02}:{int((td.total_seconds() % 3600) // 60):02}:{int(td.total_seconds() % 60):02},{int(ms % 1000):03}"
+
+
+def add_punctuation(text):
+    # Basic example: Add a period at the end if it doesn't have one
+    if text and text[-1] not in ['.', '!', '?']:
+        text += '.'
+    return text
+
 
 class TEXT_OT_transcribe(bpy.types.Operator):
     bl_idname = "text.transcribe"
@@ -592,11 +630,38 @@ class TEXT_OT_transcribe(bpy.types.Operator):
     # ['Auto detection', 'Afrikaans', 'Albanian', 'Amharic', 'Arabic', 'Armenian', 'Assamese', 'Azerbaijani', 'Bashkir', 'Basque', 'Belarusian', 'Bengali', 'Bosnian', 'Breton', 'Bulgarian', 'Burmese', 'Castilian', 'Catalan', 'Chinese', 'Croatian', 'Czech', 'Danish', 'Dutch', 'English', 'Estonian', 'Faroese', 'Finnish', 'Flemish', 'French', 'Galician', 'Georgian', 'German', 'Greek', 'Gujarati', 'Haitian', 'Haitian Creole', 'Hausa', 'Hawaiian', 'Hebrew', 'Hindi', 'Hungarian', 'Icelandic', 'Indonesian', 'Italian', 'Japanese', 'Javanese', 'Kannada', 'Kazakh', 'Khmer', 'Korean', 'Lao', 'Latin', 'Latvian', 'Letzeburgesch', 'Lingala', 'Lithuanian', 'Luxembourgish', 'Macedonian', 'Malagasy', 'Malay', 'Malayalam', 'Maltese', 'Maori', 'Marathi', 'Moldavian', 'Moldovan', 'Mongolian', 'Myanmar', 'Nepali', 'Norwegian', 'Nynorsk', 'Occitan', 'Panjabi', 'Pashto', 'Persian', 'Polish', 'Portuguese', 'Punjabi', 'Pushto', 'Romanian', 'Russian', 'Sanskrit', 'Serbian', 'Shona', 'Sindhi', 'Sinhala', 'Sinhalese', 'Slovak', 'Slovenian', 'Somali', 'Spanish', 'Sundanese', 'Swahili', 'Swedish', 'Tagalog', 'Tajik', 'Tamil', 'Tatar', 'Telugu', 'Thai', 'Tibetan', 'Turkish', 'Turkmen', 'Ukrainian', 'Urdu', 'Uzbek', 'Valencian', 'Vietnamese', 'Welsh', 'Yiddish', 'Yoruba']
 
     def execute(self, context):
+        
+#        #def ensure_pip(self):
+#        app_path = site.USER_SITE
+#        if app_path not in sys.path:
+#            sys.path.append(app_path)
+        pybin = sys.executable
+        print("pybin: "+str(pybin))
+
+        # Get the path of the Python executable (e.g., python.exe)
+        python_exe_dir = os.path.dirname(os.__file__)
+        # Construct the path to the site-packages directory
+        site_packages_dir = os.path.join(python_exe_dir, 'lib', 'site-packages') if os.name == 'nt' else os.path.join(python_exe_dir, 'lib', 'python3.x', 'site-packages')        
+
+        # Add the site-packages directory to the top of sys.path
+        sys.path.insert(0, site_packages_dir)
+        print("site_packages_dir: "+str(site_packages_dir))
+
+#        print("Ensuring: pip")
+#        try:
+#            subprocess.call([pybin, "-m", "ensurepip"])
+#            #subprocess.call([pybin, "-m", "pip", "install", "--upgrade","pip"])
+#        except ImportError:
+#            print("Pip installation failed!")
+#            #return False
+#        #return True        
+        
+        
         print("Please wait. Checking torch & whisper modules...")
         #import_module(self, "torch", "torch==2.0.0")
 
         if os_platform == "Windows":
-            subprocess.check_call(
+            subprocess.call(
                 [
                     pybin,
                     "-m",
@@ -606,11 +671,12 @@ class TEXT_OT_transcribe(bpy.types.Operator):
                     "--index-url",
                     "https://download.pytorch.org/whl/cu118",
                     "--no-warn-script-location",
-                    "--user",
+                    #"--user",
+                    #'--target', site_packages_dir,
                 ]
             )
         else:
-             subprocess.check_call(
+             subprocess.call(
                 [
                     pybin,
                     "-m",
@@ -618,14 +684,48 @@ class TEXT_OT_transcribe(bpy.types.Operator):
                     "install",
                     "torch",
                     "--no-warn-script-location",
-                    "--user",
+                    #"--user",
+                    #'--target', site_packages_dir,
                 ]
-            )           
+            )  
+                 
+        if os_platform == "Windows":
+            try:
+                exec("import triton")
+            except ModuleNotFoundError:
+                subprocess.call(
+                    [
+                        pybin,
+                        "-m",
+                        "pip",
+                        "install",
+                        "--disable-pip-version-check",
+                        "--use-deprecated=legacy-resolver",
+                        #"https://github.com/woct0rdho/triton-windows/releases/download/v3.2.0-windows.post9/triton-3.2.0-cp311-cp311-win_amd64.whl",
+                        "https://hf-mirror.com/LightningJay/triton-2.1.0-python3.11-win_amd64-wheel/resolve/main/triton-2.1.0-cp311-cp311-win_amd64.whl",
+                        "--no-warn-script-location",
+                        "--upgrade",
+                        #'--target', site_packages_dir,
+                    ]
+                )                        
+        else:
+            try:
+                exec("import triton")
+            except ModuleNotFoundError:
+                import_module(self, "triton", "triton")
 
-        import_module(self, "whisper", "git+https://github.com/openai/whisper.git") # "openai_whisper"):#
+        import_module(self, "whisper", "openai-whisper") # "openai_whisper"):#
+        #import_module(self, "whisper", "git+https://github.com/openai/whisper.git") # "openai_whisper"):#
+
+        print("Checking srttranslator module...")
+        if not import_module(self, "srtranslator", "srtranslator"):
+            print("Srttranslator module not found!")
+            return {"CANCELLED"}
+
+        from srtranslator import SrtFile
+
         import whisper
         from whisper.utils import get_writer
-
         current_scene = bpy.context.scene
         try:
             active = current_scene.sequence_editor.active_strip
@@ -642,45 +742,60 @@ class TEXT_OT_transcribe(bpy.types.Operator):
         clip_start = int(active.frame_start + active.frame_offset_start)
         clip_end = int(
             active.frame_start + active.frame_final_duration
-        )  # -active.frame_offset_end)
-
+        ) 
         sound_path = bpy.path.abspath(active.sound.filepath)
+        sound_path = os.path.normpath(os.path.realpath(sound_path))  # Fully resolve path
         output_dir = os.path.dirname(sound_path)
+        print("sound_path: "+str(sound_path))
+        print("output_dir: "+str(output_dir))
         audio_basename = os.path.basename(sound_path)
+        print("audio_basename: "+str(audio_basename))
 
         print("Please wait. Processing file...")
         load_model = context.preferences.addons[__name__].preferences.load_model
         model = whisper.load_model(load_model.lower())
-        result = model.transcribe(sound_path)
-
-        transcribe = model.transcribe(sound_path) #, word_timestamps=True
-        segments = transcribe["segments"]
 
         out_dir = os.path.join(output_dir, audio_basename + ".srt")
         if os.path.exists(out_dir):
             os.remove(out_dir)
 
-#        srt_writer = get_writer("srt", ".")
-#        srt_writer(transcribe, out_dir, {"max_line_width":42, "max_line_count":2})    
-            
-        segmentId = 0
-        for segment in segments:
-            startTime = str(0) + str(timedelta(seconds=int(segment["start"]))) + ",000"
-            endTime = str(0) + str(timedelta(seconds=int(segment["end"]))) + ",000"
-            text = segment["text"]
-            text = text.strip()
-            text = "..." + text if text and not text[0].isupper() else text
-            text = text + "..." if text[-1] not in [".",","] else text
-            
-            segmentId = segment["id"] + 1
-            segment = f"{segmentId}\n{startTime} --> {endTime}\n{text[1:] if text[0] == ' ' else text}\n\n"
-            # srtFilename = out_dir + audio_basename + ".srt"
-            with open(out_dir, "a", encoding="utf-8") as srtFile:
-                srtFile.write(segment)
-        # save SRT
-        #        with open(out_dir, "w", encoding="utf-8") as srt:
-        #            write_srt(result["segments"], file=srt)
-        # offset = 0
+        transcribe = model.transcribe(sound_path, word_timestamps=True)
+        segments = transcribe["segments"]
+
+        silence_threshold = 1000  # 1 second of silence before breaking subtitles
+
+        with open(out_dir, "w", encoding="utf-8") as srtFile:
+            segmentId = 0
+            last_end_time = 0
+
+            for segment in segments:
+                words = segment.get("words", [])
+                if not words:
+                    continue  # Skip empty segments
+
+                start_time = words[0]["start"] * 1000  # Convert to ms
+                end_time = words[-1]["end"] * 1000  # Convert to ms
+
+                # If there's a big silence gap before this segment, adjust timing
+                if start_time - last_end_time > silence_threshold:
+                    start_time = last_end_time  # Fix start time
+
+                last_end_time = end_time  # Update end time
+
+                startTime = format_srt_time(start_time)
+                endTime = format_srt_time(end_time)
+
+                text = segment["text"].strip()
+                if not text:
+                    continue  # Skip empty text
+                text = add_punctuation(text)
+
+                srt_segment = f"{segmentId + 1}\n{startTime} --> {endTime}\n{text}\n\n"
+                srtFile.write(srt_segment)
+
+                segmentId += 1
+
+        print("Processing finished.")
         if os.path.exists(out_dir):
             load_subtitles(self, out_dir, context, offset)
         return {"FINISHED"}
@@ -906,6 +1021,7 @@ class SEQUENCER_OT_export_list_subtitles(Operator, ImportHelper):
     def execute(self, context):
         #ensure_pip(self)
         print("Please wait. Checking pysubs2 module...")
+                
         if not import_module(self, "pysubs2", "pysubs2"):
             return {"CANCELLED"}
         import pysubs2
@@ -1011,8 +1127,8 @@ class SEQUENCER_OT_copy_textprops_to_selected(Operator):
                 strip.box_margin = active.box_margin
                 strip.location[0] = active.location[0]
                 strip.location[1] = active.location[1]
-                strip.align_x = active.align_x
-                strip.align_y = active.align_y
+                strip.anchor_x = active.anchor_x
+                strip.anchor_y = active.anchor_y
         return {"FINISHED"}
 
 
