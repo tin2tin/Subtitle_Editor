@@ -23,6 +23,7 @@ https://user-images.githubusercontent.com/1322593/223361423-36917ff0-2756-4e80-8
 
 ## Installation
 (As for Linux and MacOS, if anything differs in installation, then please share instructions.)
+* Use Blender 4.4+
 * First you must download and install git for your platform: https://git-scm.com/downloads
 * Download the add-on: [zip](https://github.com/tin2tin/subtitle_editor/archive/refs/heads/main.zip)
 * On Windows, right click on the Blender icon and "Run Blender as Administrator"(or you'll get write permission errors).
