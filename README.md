@@ -28,6 +28,7 @@ https://user-images.githubusercontent.com/1322593/223361423-36917ff0-2756-4e80-8
 * Download the add-on: [zip](https://github.com/tin2tin/subtitle_editor/archive/refs/heads/main.zip)
 * On Windows, right click on the Blender icon and "Run Blender as Administrator"(or you'll get write permission errors).
 * Install the add-on as usual: Preferences > Add-ons > Install > select file > enable the add-on.
+* If the translation feature should be used Firefox needs to be installed.  
 
 Tip           |
 :------------- |
