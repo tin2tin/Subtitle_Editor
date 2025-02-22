@@ -532,7 +532,7 @@ def load_subtitles(self, file, context, offset):
             y = (render.resolution_y - int(pos[1])) / render.resolution_y
             position = True
             line.text = re.sub(r"{.+?}", "", line.text)
-        if line.text and line.start and line.end:
+        if line.end: #line.text and line.start and 
             new_strip = editor.sequences.new_effect(
                 name=line.text,
                 type="TEXT",
@@ -588,7 +588,7 @@ class subtitle_preferences(bpy.types.AddonPreferences):
         name="Model",
         description="Choose the model. And expect higher load times.",
         items=load_models,
-        default="TINY",
+        default="LARGE",
     )
     
     def draw(self, context):
