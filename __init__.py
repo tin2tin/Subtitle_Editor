@@ -34,6 +34,8 @@ from bpy.types import Operator
 from bpy_extras.io_utils import ImportHelper
 from bpy.props import StringProperty, BoolProperty, EnumProperty
 from datetime import timedelta
+import bmesh
+from bpy.app.translations import pgettext_data as data_
 os_platform = platform.system()  # 'Linux', 'Darwin', 'Java', 'Windows'
 
 def get_strip_by_name(name):
@@ -201,7 +203,163 @@ class SEQUENCER_OT_refresh_list(bpy.types.Operator):
             # Set the current frame to the start frame of the active strip
             bpy.context.scene.frame_set(int(active.frame_start))
         return {"FINISHED"}
+    
 
+def build_geometry_node_group(name,text,font_name):
+    group = bpy.data.node_groups.new(name, 'GeometryNodeTree')
+    group.inputs.new('NodeSocketGeometry', data_("Geometry"))
+    group.outputs.new('NodeSocketGeometry', data_("Geometry"))
+    input_node = group.nodes.new('FunctionNodeInputString')
+    input_node.string=text
+    output_node = group.nodes.new('NodeGroupOutput')
+    output_node.is_active_output = True
+#bpy.ops.node.add_node(use_transform=True, type="GeometryNodeStringToCurves")
+#bpy.ops.font.open(filepath="C:\\WINDOWS\\Fonts\\msyhbd.ttc", relative_path=True) SimHei Regular
+
+    text_to_line_node=group.nodes.new("GeometryNodeStringToCurves")
+    text_to_line_node.font=bpy.data.fonts[font_name]
+  
+
+#    bpy.ops.node.add_node(use_transform=True, type="GeometryNodeFillCurve")
+#bpy.ops.node.add_node(use_transform=True, type="GeometryNodeExtrudeMesh")
+
+    fill_node=group.nodes.new("GeometryNodeFillCurve")
+
+    extrudemesh_node=group.nodes.new("GeometryNodeRealizeInstances")
+   
+
+    input_node.select = False
+    output_node.select = False
+    text_to_line_node.location.x=-200 -  text_to_line_node.width
+    input_node.location.x = -400 - input_node.width
+    output_node.location.x = 200
+
+    return group
+
+
+def geometry_node_group_new(text='',font_name=''):
+    group = build_geometry_node_group(data_("Geometry Nodes"),text,font_name)
+    group.links.new(group.nodes[data_("String")].outputs[0], group.nodes[data_("String to Curves")].inputs[0])
+    group.links.new(group.nodes[data_("String to Curves")].outputs[0], group.nodes[data_("Fill Curve")].inputs[0])
+    group.links.new(group.nodes[data_("Fill Curve")].outputs[0], group.nodes[data_("Realize Instances")].inputs[0])
+    
+    group.links.new(group.nodes[data_("Realize Instances")].outputs[0], group.nodes[data_("Group Output")].inputs[0])
+    return group
+
+
+class SEQUENCER_OT_add_model(bpy.types.Operator,ImportHelper):
+    """转换成3D模型"""
+
+    bl_idname = "text.add_model"
+    bl_label = "转换成3D模型"
+
+    filename_ext = [".ttf", ".ttc",".otf"]
+
+    filter_glob: StringProperty(
+        default="*.ttf;*.ttc;*.ssotfa;",
+        options={"HIDDEN"},
+        maxlen=255,
+    )
+
+    def execute(self, context):
+     
+        # Get a list of all Text Strips in the VSE
+        text_strips = [
+            strip
+            for strip in bpy.context.scene.sequence_editor.sequences
+            if strip.type == "TEXT"
+        ]
+        bpy.ops.font.open(filepath=self.filepath, relative_path=True)
+
+        from fontTools.ttLib import TTFont
+
+        font = TTFont(self.filepath,fontNumber=0)
+        # 获取字体的安装名称
+        font_name = font['name'].getDebugName(3)
+        print(font_name)
+
+        # Sort the Subtitle Editor based on their start times in the timeline
+        text_strips.sort(key=lambda strip: strip.frame_start)
+
+        bpy.ops.object.empty_add(
+            type='PLAIN_AXES',
+        )
+        
+        parent=bpy.context.view_layer.objects.selected[0]
+        parent.name='字幕'
+        parent.location=(5,5,5)
+     
+       
+        #bpy.context.collection.objects.link(parent)
+        bpy.context.view_layer.objects.active = parent
+        #字幕材质bpy.ops.object.material_slot_add()
+        #bpy.ops.object.material_slot_add();
+     
+        #bpy.ops.object.material_slot_assign()
+        #ms=parent.material_slots[0]
+        #ms.link="OBJECT"
+        
+        material = bpy.data.materials.new("字幕颜色")
+        #ms.material=material
+        #bpy.context.object.active_material.diffuse_color = (1, 1, 0.597682, 0)bpy.context.object.active_material.metallic = 1bpy.context.object.active_material.specular_intensity = 1
+
+
+        material.diffuse_color = (1, 1, 0.597682, 0)
+        material.metallic = 1
+        material.specular_intensity = 1
+        # Iterate through the sorted text strips and add them to the list
+        # bpy.ops.outliner.item_activate(deselect_all=True)
+
+        for strip in text_strips:
+            print(strip.text,strip.frame_start,strip.frame_offset_start,strip.frame_duration,strip.frame_final_duration,strip.frame_final_end,strip.frame_final_start)
+    
+            mesh = bpy.data.meshes.new(name=strip.text)
+
+            # Add the mesh to the scene
+            obj = bpy.data.objects.new(strip.text, mesh)
+            obj.parent=parent
+   
+           
+            # obj.material_slots[0].link="DATA"
+            # obj.material_slots[0].material=material
+    
+
+           
+            modifier = obj.modifiers.new(data_("GeometryNodes"), 'NODES')
+            if not modifier:
+                return {'CANCELLED'}
+
+            group = geometry_node_group_new(strip.text,font_name)
+            modifier.node_group = group
+            #bpy.ops.object.modifier_add(type='SOLIDIFY')
+            solidify=obj.modifiers.new(data_("Solidify"),"SOLIDIFY");
+            solidify.thickness=0.1
+            # modifier.add_node(use_tran    sform=True, type="FunctionNodeInputString")
+            bpy.context.collection.objects.link(obj)
+            bpy.context.view_layer.objects.active = obj
+            bpy.ops.object.material_slot_add();
+            obj.material_slots[0].link="OBJECT"
+            obj.material_slots[0].material=material
+        
+            obj.hide_render=True
+            obj.hide_viewport=True
+            obj.keyframe_insert(data_path="hide_render", frame=1)
+            obj.keyframe_insert(data_path="hide_viewport", frame=1)
+
+            obj.hide_render=False
+            obj.hide_viewport=False
+            obj.keyframe_insert(data_path="hide_render", frame=strip.frame_start)
+            obj.keyframe_insert(data_path="hide_viewport", frame=strip.frame_start)
+
+            obj.hide_render=True
+            obj.hide_viewport=True
+            obj.keyframe_insert(data_path="hide_render", frame=strip.frame_final_end)
+            obj.keyframe_insert(data_path="hide_viewport", frame=strip.frame_final_end)
+            obj.hide_render=False
+            obj.hide_viewport=False
+
+
+        return {"FINISHED"}
 
 class SEQUENCER_OT_add_strip(bpy.types.Operator):
     """Add a new text strip after the position of the current selected list item"""
@@ -1158,6 +1316,7 @@ class SEQUENCER_PT_panel(bpy.types.Panel):
         row = row.column(align=True)
         row.operator("text.refresh_list", text="", icon="FILE_REFRESH")
 
+   
         row.separator()
 
         row.operator("sequencer.import_subtitles", text="", icon="IMPORT")
@@ -1177,8 +1336,8 @@ class SEQUENCER_PT_panel(bpy.types.Panel):
         row.separator()
 
         row.operator("text.insert_newline", text="", icon="EVENT_RETURN")
-
-
+      
+        row.operator("text.add_model", text="3D")
 def import_subtitles(self, context):
     layout = self.layout
     layout.separator()
@@ -1215,6 +1374,7 @@ classes = (
     TextStripItem,
     SEQUENCER_UL_List,
     SEQUENCER_OT_refresh_list,
+    SEQUENCER_OT_add_model,
     SEQUENCER_OT_add_strip,
     SEQUENCER_OT_delete_item,
     SEQUENCER_OT_delete_strip,
