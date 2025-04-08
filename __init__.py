@@ -532,7 +532,7 @@ def load_subtitles(self, file, context, offset):
             y = (render.resolution_y - int(pos[1])) / render.resolution_y
             position = True
             line.text = re.sub(r"{.+?}", "", line.text)
-        if line.end: #line.text and line.start and 
+        if line.end and line.text and line.start:
             new_strip = editor.sequences.new_effect(
                 name=line.text,
                 type="TEXT",
