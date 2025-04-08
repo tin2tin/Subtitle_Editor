@@ -40,7 +40,7 @@ In the Sequencer sidebar, the Subtitle Editor tab can be found. Most functions a
 
 ## Transcriptions
 
-https://user-images.githubusercontent.com/1322593/223356195-73ffebea-143d-4d36-81eb-c22a8f580bc0.mp4
+![image](https://github.com/user-attachments/assets/82594e0a-7af6-4461-a23f-a316b0a5024f)
 
 ## Translation
 
