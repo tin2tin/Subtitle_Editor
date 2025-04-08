@@ -20,7 +20,7 @@ bl_info = {
     "name": "Subtitle Editor",
     "description": "Displays a list of all Subtitle Editor in the VSE and allows editing of their text.",
     "author": "tintwotin",
-    "version": (1, 0),
+    "version": (1, 1),
     "blender": (4, 4, 0),
     "location": "Sequencer > Side Bar > Subtitle Editor Tab",
     "warning": "",
@@ -29,10 +29,19 @@ bl_info = {
     "category": "Sequencer",
 }
 
+
 import os, sys, bpy, pathlib, re, ctypes, site, subprocess, platform
+import ensurepip
+from bpy.props import (
+    EnumProperty,
+    StringProperty,
+    BoolProperty,
+    IntProperty,
+    FloatProperty,
+    PointerProperty
+)
 from bpy.types import Operator
 from bpy_extras.io_utils import ImportHelper
-from bpy.props import StringProperty, BoolProperty, EnumProperty
 from datetime import timedelta
 os_platform = platform.system()  # 'Linux', 'Darwin', 'Java', 'Windows'
 
@@ -41,6 +50,12 @@ def get_strip_by_name(name):
         if strip.name == name:
             return strip
     return None
+
+FASTER_WHISPER_VERSION = "1.0.3" # Or latest known stable version
+REQUIRED_PACKAGE = f"faster-whisper=={FASTER_WHISPER_VERSION}"
+dependencies_checked = False
+dependencies_installed = False
+faster_whisper_module = None
 
 
 def find_first_empty_channel(start_frame, end_frame):
@@ -106,6 +121,729 @@ def set_system_console_topmost(top):
             0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
         )
+
+def get_selected_strip(context):
+    """Gets the selected non-meta audio strip."""
+    for strip in reversed(context.selected_sequences):
+        if strip.type == 'SOUND' and not strip.mute:
+            # Check if inside a meta strip and return None if so
+            # (This check might need refinement depending on desired behavior with meta strips)
+            # if context.selected_sequences and context.selected_sequences[0].type == 'META':
+            #     return None
+            return strip
+    return None
+
+def ensure_user_site_packages(user_site_packages_path):
+    """
+    Ensures the user site-packages directory exists and attempts to make it writable.
+    Returns True on success or if directory exists and is writable, False otherwise.
+    """
+    if not os.path.exists(user_site_packages_path):
+        try:
+            os.makedirs(user_site_packages_path, exist_ok=True)
+            print(f"Created user site-packages directory: {user_site_packages_path}")
+        except OSError as e:
+            print(f"Error creating directory {user_site_packages_path}: {e}")
+            return False
+
+    if not os.access(user_site_packages_path, os.W_OK):
+        print(f"User site-packages directory is not writable: {user_site_packages_path}")
+        # Attempting to change permissions might be risky and platform-dependent.
+        # On Linux/macOS:
+        # try:
+        #     os.chmod(user_site_packages_path, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+        #     print(f"Attempted to make {user_site_packages_path} writable.")
+        #     return os.access(user_site_packages_path, os.W_OK)
+        # except Exception as e:
+        #      print(f"Could not change permissions for {user_site_packages_path}: {e}")
+        #      return False
+        # For now, just warn if not writable. Installation might still work if Python has other means.
+        return True # Proceed with caution
+    return True
+
+
+def check_faster_whisper():
+    """Checks if faster-whisper is installed and importable."""
+    global dependencies_installed, faster_whisper_module
+    if dependencies_installed and faster_whisper_module:
+        return True
+    try:
+        # Try importing the core component
+        from faster_whisper import WhisperModel
+        # Store the module for later use if needed (optional)
+        import faster_whisper
+        faster_whisper_module = faster_whisper
+        dependencies_installed = True
+        print("faster-whisper found and imported successfully.")
+        return True
+    except ImportError:
+        dependencies_installed = False
+        faster_whisper_module = None
+        print("faster-whisper module not found.")
+        return False
+    except Exception as e:
+        # Catch other potential import errors
+        dependencies_installed = False
+        faster_whisper_module = None
+        print(f"An unexpected error occurred during faster-whisper import check: {e}")
+        return False
+
+def install_dependencies(blender_python_exe):
+    """Attempts to install faster-whisper using pip. Returns (bool success, str message)."""
+    global dependencies_installed
+
+    # Ensure pip is available in Blender's Python
+    try:
+        print("Ensuring pip is available...")
+        ensurepip.bootstrap()
+    except Exception as e:
+        print(f"Failed to bootstrap pip: {e}. Will attempt to use pip anyway.")
+        # Continue, maybe pip is already there via other means
+
+    # Construct the pip install command
+    cmd = [
+        blender_python_exe, "-m", "pip", "install", "--upgrade",
+        "--user", "--no-cache-dir", "onnxruntime"
+    ]
+    print(f"Running installation command: {' '.join(cmd)}")
+
+    try:
+        # Use subprocess.run with captured output and error checking
+        process = subprocess.run(cmd, capture_output=True, text=True, check=True, encoding='utf-8', errors='replace')
+    except subprocess.CalledProcessError as e:
+        # Pip command failed
+        error_message = f"ERROR: Failed to install onnxruntime.\n" \
+                        f"Ensure Blender is started as administrator.\n" \
+                        f"Command: {' '.join(e.cmd)}\n" \
+                        f"Return Code: {e.returncode}\n" \
+                        f"--- Error Output (stderr) ---\n{e.stderr}\n" \
+                        f"--- Standard Output (stdout) ---\n{e.stdout}\n" \
+                        f"-----------------------------"
+        print(error_message) # Log detailed error to console
+        report_message = f"ERROR: Failed to install onnxruntime. Check Blender System Console for details."
+        dependencies_installed = False
+        return False, report_message
+    
+    # Construct the pip install command
+    cmd = [
+        blender_python_exe, "-m", "pip", "install", "--upgrade",
+        "--user", "--no-cache-dir", REQUIRED_PACKAGE
+    ]
+    print(f"Running installation command: {' '.join(cmd)}")
+
+    try:
+        # Use subprocess.run with captured output and error checking
+        process = subprocess.run(cmd, capture_output=True, text=True, check=True, encoding='utf-8', errors='replace')
+        print("faster-whisper installation command finished.")
+        print("--- pip stdout ---")
+        print(process.stdout)
+        print("--- pip stderr ---")
+        print(process.stderr) # Print stderr even on success, might contain warnings
+        print("------------------")
+
+        # Verify installation by trying to import again
+        if check_faster_whisper():
+            dependencies_installed = True
+            return True, f"{REQUIRED_PACKAGE} installed successfully!"
+        else:
+            dependencies_installed = False
+            # This is odd, install reported success but import failed
+            error_message = f"Installation command seemed to succeed, but '{REQUIRED_PACKAGE}' could not be imported afterwards.\n" \
+                            f"Check the Blender System Console for output from pip.\n" \
+                            f"Stdout:\n{process.stdout}\nStderr:\n{process.stderr}"
+            print(error_message)
+            return False, "Installation succeeded but module import failed. Check console & restart Blender."
+
+
+    except subprocess.CalledProcessError as e:
+        # Pip command failed
+        error_message = f"ERROR: Failed to install {REQUIRED_PACKAGE}.\n" \
+                        f"Command: {' '.join(e.cmd)}\n" \
+                        f"Return Code: {e.returncode}\n" \
+                        f"--- Error Output (stderr) ---\n{e.stderr}\n" \
+                        f"--- Standard Output (stdout) ---\n{e.stdout}\n" \
+                        f"-----------------------------"
+        print(error_message) # Log detailed error to console
+        report_message = f"ERROR: Failed to install {REQUIRED_PACKAGE}. Check Blender System Console for details."
+        dependencies_installed = False
+        return False, report_message
+
+    except FileNotFoundError:
+        error_message = f"ERROR: Blender's Python executable not found at '{blender_python_exe}'. Cannot install dependencies."
+        print(error_message)
+        dependencies_installed = False
+        return False, error_message
+
+    except Exception as e:
+        # Catch other potential errors (e.g., permission denied even with --user)
+        error_message = f"An unexpected error occurred during installation: {e}"
+        import traceback
+        traceback.print_exc() # Print traceback to console
+        print(error_message)
+        dependencies_installed = False
+        return False, f"An unexpected error occurred during installation. Check console: {e}"
+    
+
+
+class WhisperProperties(bpy.types.PropertyGroup):
+    """Properties for the Faster Whisper Addon"""
+
+    model_size: EnumProperty(
+        name="Model Size",
+        description="Size of the Faster Whisper model (larger = more accurate, slower, more memory)",
+        items=[
+            ('tiny', 'Tiny (~39M)', 'Tiny model (~39M params)'),
+            ('base', 'Base (~74M)', 'Base model (~74M params)'),
+            ('small', 'Small (~244M)', 'Small model (~244M params)'),
+            ('medium', 'Medium (~769M)', 'Medium model (~769M params)'),
+            ('distil-small.en', 'Distil Small EN (~206M)', 'Distilled Small English-only'),
+            ('distil-medium.en', 'Distil Medium EN (~668M)', 'Distilled Medium English-only'),
+            ('distil-large-v2', 'Distil Large v2 (~1364M)', 'Distilled Large v2 model'),
+            ('large-v1', 'Large v1 (~1550M)', 'Large model v1 (~1550M params)'),
+            ('large-v2', 'Large v2 (~1550M)', 'Large model v2 (~1550M params)'),
+            ('large-v3', 'Large v3 (~1550M)', 'Large model v3 (~1550M params)'),
+        ],
+        default='small',
+    )
+
+    device: EnumProperty(
+        name="Device",
+        description="Hardware device (CUDA requires Nvidia GPU and toolkit setup)",
+        items=[
+            ('cpu', 'CPU', 'Use the Central Processing Unit'),
+            ('cuda', 'CUDA', 'Use Nvidia GPU via CUDA'),
+            # ('auto', 'Auto', 'Automatically detect best device') # Faster-whisper usually better with explicit
+        ],
+        default='cpu',
+    )
+
+    compute_type: EnumProperty(
+        name="Compute Type",
+        description="Quantization/precision (int8 = fastest, float32 = most precise)",
+        # Check faster-whisper docs for supported types per device/backend
+        items=[
+            ('int8', 'int8', '8-bit integer (Fastest, low memory, good for CPU)'),
+            ('int8_float16', 'int8_float16', 'int8 input, float16 compute (GPU)'),
+            # ('int16', 'int16', '16-bit integer'), # Less common? Check docs
+            ('float16', 'float16', '16-bit float (Requires capable GPU/CPU)'),
+            ('float32', 'float32', '32-bit float (Most precise, slowest, highest memory)'),
+            # ('auto', 'Auto', 'Select best based on device') # Usually defaults based on device if not set
+        ],
+        default='int8', # Good default for CPU
+    )
+
+    language: EnumProperty(
+        name="Language",
+        description="Language spoken in the audio ('auto' to detect)",
+        # Items based on Whisper's supported languages - abbreviated list for example
+        items=[
+            ("auto", "Any language (detect)", ""),
+            ("bg", "Bulgarian", "Bulgarian"),
+            ("zh", "Chinese", "Chinese"),
+            ("cs", "Czech", ""),
+            ("da", "Danish", ""),
+            ("nl", "Dutch", ""),
+            ("en", "English", ""),  # Only usable for source language
+            # ("en-US", "English (American)", ""),  # Only usable for destination language
+            # ("en-GB", "English (British)", ""),  # Only usable for destination language
+            ("et", "Estonian", ""),
+            ("fi", "Finnish", ""),
+            ("fr", "French", ""),
+            ("de", "German", ""),
+            ("el", "Greek", ""),
+            ("hu", "Hungarian", ""),
+            ("id", "Indonesian", ""),
+            ("it", "Italian", ""),
+            ("ja", "Japanese", ""),
+            ("lv", "Latvian", ""),
+            ("lt", "Lithuanian", ""),
+            ("pl", "Polish", ""),
+            ("pt", "Portuguese", ""),  # Only usable for source language
+            # ("pt-PT", "Portuguese", ""),  # Only usable for destination language
+            # ("pt-BR", "Portuguese (Brazilian)", ""),  # Only usable for destination language
+            ("ro", "Romanian", ""),
+            ("ru", "Russian", ""),
+            ("sk", "Slovak", ""),
+            ("sl", "Slovenian", ""),
+            ("es", "Spanish", ""),
+            ("sv", "Swedish", ""),
+            ("tr", "Turkish", ""),
+            ("uk", "Ukrainian", ""),
+            # Add more languages as needed... See Whisper documentation for full list
+        ],
+        default='auto',
+    )
+
+    beam_size: IntProperty(
+        name="Beam Size",
+        description="Beam size for decoding (higher can improve accuracy but increases computation)",
+        default=5,
+        min=1,
+    )
+
+    use_vad: BoolProperty(
+        name="Use VAD Filter",
+        description="Enable Voice Activity Detection (VAD) to filter silence/non-speech",
+        default=True,
+    )
+
+# --- NEW Properties for Text Strips ---
+    output_channel: IntProperty(
+        name="Output Channel",
+        description="VSE channel to place the subtitle text strips on",
+        default=2, # Default to channel 2 (often above main video/audio)
+        min=1,
+    )
+
+    font_size: IntProperty(
+        name="Font Size",
+        description="Font size for the subtitle text strips",
+        default=50,
+        min=1,
+        max=1000, # Set a reasonable max
+    )
+
+    text_align_y: EnumProperty(
+        name="Vertical Align",
+        description="Vertical alignment of the text within the frame",
+        items=[
+            ('TOP', 'Top', 'Align text to the top'),
+            ('CENTER', 'Center', 'Align text to the center'),
+            ('BOTTOM', 'Bottom', 'Align text to the bottom'),
+        ],
+        default='BOTTOM',
+    )
+
+    wrap_width: FloatProperty(
+        name="Wrap Width (0=Off)",
+        description="Wrap text width as a factor of frame width (e.g., 0.9 for 90%). 0 disables wrapping",
+        default=0.9,
+        min=0.0, # 0 disables wrap
+        max=1.0,
+        subtype='FACTOR',
+    )
+
+
+# --- Operators ---
+
+class SEQUENCER_OT_whisper_setup(Operator):
+    """Checks and installs the faster-whisper dependency"""
+    bl_idname = "sequencer.whisper_setup"
+    bl_label = "Install/Verify Dependencies"
+    bl_description = f"Downloads and installs {REQUIRED_PACKAGE} using pip"
+    bl_options = {'REGISTER', 'INTERNAL'} # Internal prevents redo panel
+
+    @classmethod
+    def poll(cls, context):
+        # Allow running anytime to verify or reinstall
+        return True
+
+    def execute(self, context):
+        global dependencies_checked, dependencies_installed, faster_whisper_module
+
+        # Re-check first, maybe it was installed manually since Blender started
+        if not dependencies_installed:
+            print("Running initial check before attempting installation...")
+            check_faster_whisper()
+
+        if dependencies_installed:
+             self.report({'INFO'}, f"{REQUIRED_PACKAGE} seems to be installed.")
+             # Maybe add a 'reinstall' option later if needed
+             return {'FINISHED'}
+
+        self.report({'INFO'}, "Attempting dependency installation...")
+
+        # 1. Find Blender's Python
+        python_exe = sys.executable
+        if not python_exe or not os.path.isfile(python_exe):
+             python_exe = bpy.app.binary_path_python # Fallback
+             if not python_exe or not os.path.isfile(python_exe):
+                 self.report({'ERROR'}, "Could not find Blender's Python executable.")
+                 return {'CANCELLED'}
+
+        print(f"Using Python executable: {python_exe}")
+
+        # 2. Ensure user site-packages is usable (optional but recommended)
+        try:
+            user_site_packages = subprocess.check_output(
+                [python_exe, "-m", "site", "--user-site"],
+                stderr=subprocess.STDOUT # Capture stderr too
+            ).strip().decode("utf-8", errors='replace')
+            print(f"Targeting user site-packages: {user_site_packages}")
+            if not ensure_user_site_packages(user_site_packages):
+                 print("Warning: Could not ensure user site-packages directory exists/is writable. Installation might fail.")
+                 # self.report({'WARNING'}, "Could not prepare user site-packages dir. Install might fail.")
+        except Exception as e:
+            print(f"Could not determine user site-packages: {e}. Proceeding anyway.")
+
+        # 3. Attempt installation
+        self.report({'INFO'}, f"Installing {REQUIRED_PACKAGE}... This may take a moment. Check console.")
+        bpy.context.window_manager.progress_begin(0, 1)
+        bpy.context.window_manager.progress_update(0.5) # Indicate activity
+
+        # Trigger a UI update so the message appears
+        bpy.context.window_manager.windows.update()
+
+        success, message = install_dependencies(python_exe)
+
+        bpy.context.window_manager.progress_end()
+
+        if success:
+            self.report({'INFO'}, message)
+        else:
+            self.report({'ERROR'}, message)
+            # Provide manual installation instructions as a fallback
+            manual_instructions = f"Automatic installation failed.\n" \
+                                  f"1. Start Blender as Administrator.\n" \
+                                  f"2. Restart Blender after installation.\n" \
+                                  f"3. Also ensure FFmpeg is installed and in your system PATH."
+            print(manual_instructions) # Also print instructions to console
+            self.report({'WARNING'}, "See System Console for manual install instructions.")
+
+        # Update state regardless of success/failure for this session
+        dependencies_checked = True
+
+        return {'FINISHED'} if success else {'CANCELLED'}
+
+
+class SEQUENCER_OT_whisper_transcribe(Operator):
+    """Transcribes selected audio strip using Faster Whisper into Text Strips""" # Updated description
+    bl_idname = "sequencer.whisper_transcribe"
+    bl_label = "Transcribe Audio to Text Strips" # Updated label
+    bl_options = {'REGISTER', 'UNDO'}
+
+    task: StringProperty(default="transcribe") # "transcribe" or "translate"
+
+    @classmethod
+    def poll(cls, context):
+        if not context.scene:
+            return False
+        if not dependencies_installed or faster_whisper_module is None:
+             # Disable if not installed (check is cheap)
+             cls.poll_message_set("Dependencies not installed. Run 'Install/Verify Dependencies'.")
+             return False
+        # Check for selected audio strip
+        s = get_selected_strip(context)
+        if not s:
+             cls.poll_message_set("Select an audio strip first.")
+             return False
+        if not s.sound or not s.sound.filepath:
+             cls.poll_message_set("Selected audio strip has no file path.")
+             return False
+        if not s.type =="SOUND":
+             return False
+        return True
+
+
+    def execute(self, context):
+        global dependencies_checked, dependencies_installed, faster_whisper_module
+        scene = context.scene
+        props = scene.whisper_props # Access properties via the property group
+
+        # --- Dependency Check ---
+        if not dependencies_checked:
+            check_faster_whisper() # Check silently if setup wasn't run
+            dependencies_checked = True
+
+        if not dependencies_installed or faster_whisper_module is None:
+            self.report({'ERROR'}, f"{REQUIRED_PACKAGE} not installed. Please run '{SEQUENCER_OT_whisper_setup.bl_label}'.")
+            # Consider showing a popup:
+            # bpy.ops.wm.call_confirm_popup(message=f"Please run '{SEQUENCER_OT_whisper_setup.bl_label}' first.")
+            return {'CANCELLED'}
+
+        # --- Get Parameters & Validate ---
+        strip = get_selected_strip(context)
+        if not strip: # Should be caught by poll, but double check
+            self.report({'ERROR'}, "No valid audio strip selected.")
+            return {'CANCELLED'}
+
+        try:
+            audio_filepath = bpy.path.abspath(strip.sound.filepath)
+            if not os.path.exists(audio_filepath):
+                # Try the regular filepath as fallback
+                audio_filepath = bpy.path.abspath(strip.sound.filepath)
+                if not os.path.exists(audio_filepath):
+                    self.report({'ERROR'}, f"Audio file not found: {strip.sound.filepath}")
+                    return {'CANCELLED'}        
+        except Exception as e:
+             self.report({'ERROR'}, f"Error accessing audio filepath: {e}")
+             return {'CANCELLED'}
+
+        allowed_extensions = {'.wav', '.mp3', '.ogg', '.flac', '.m4a', '.aac', '.wma', '.opus'} # Add more if needed
+        _ , file_extension = os.path.splitext(audio_filepath)
+        if file_extension.lower() not in allowed_extensions:
+             # Specifically check for .blend
+             if file_extension.lower() == '.blend':
+                  error_msg = (f"The source path for the audio strip points to a '.blend' file ({os.path.basename(audio_filepath)}), "
+                               f"not an audio file. Please correct the strip's 'File Path' in Blender's properties panel "
+                               f"or unpack the audio if it was packed.")
+             else:
+                  error_msg = (f"The source file ('{os.path.basename(audio_filepath)}') does not appear to be a supported audio format. "
+                               f"Supported types include: {', '.join(allowed_extensions)}. "
+                               f"Please check the strip's 'File Path' in Blender.")
+             self.report({'ERROR'}, error_msg)
+             return {'CANCELLED'}
+
+        # Get properties from scene property group
+        model_size = props.model_size
+        device = props.device
+        compute_type = props.compute_type
+        language_code = props.language if props.language != "auto" else None # faster-whisper uses None for auto
+        beam_size = props.beam_size
+        use_vad = props.use_vad
+        current_task = self.task # "transcribe" or "translate"
+
+        strip_start_frame = strip.frame_start
+        fps = scene.render.fps / scene.render.fps_base
+        if fps <= 0:
+             self.report({'ERROR'}, "Scene FPS must be positive.")
+             return {'CANCELLED'}
+
+        # --- Load Model and Transcribe ---
+        try:
+            # Access the already imported module's class
+            WhisperModel = faster_whisper_module.WhisperModel
+
+            print(f"Loading faster-whisper model: {model_size} (Device: {device}, Compute: {compute_type})")
+            self.report({'INFO'}, f"Loading model '{model_size}'... (May download first time)")
+            bpy.context.window_manager.windows.update() # Force redraw
+
+            # Check if model exists locally, potentially estimate download size/time? (Advanced)
+
+            model = WhisperModel(model_size, device=device, compute_type=compute_type)
+
+            print(f"Starting transcription...")
+            self.report({'INFO'}, f"Transcribing '{os.path.basename(audio_filepath)}' (Task: {current_task})...")
+            bpy.context.window_manager.progress_begin(0, 100)
+
+            # Faster-whisper transcribe yields segments
+            # VAD default parameters are usually sensible. Can be tuned via vad_parameters=dict(...)
+            segments, info = model.transcribe(
+                audio=audio_filepath,
+                language=language_code,
+                task=current_task,
+                beam_size=beam_size,
+                vad_filter=use_vad,
+                vad_parameters=dict(min_silence_duration_ms=500), # Example VAD tuning
+                # word_timestamps=False, # Set True if needed, increases computation significantly
+                # condition_on_previous_text=True # Helps context, default True
+            )
+
+            detected_lang = info.language
+            detected_prob = info.language_probability
+            print(f"Detected language: {detected_lang} (Confidence: {detected_prob:.2f})")
+            print(f"Transcription duration: {info.duration:.2f}s") # Actual processing duration
+
+            if language_code is None and detected_lang:
+                 # Try to update the UI language selector if auto-detect was used
+
+                 # --- CORRECTED WAY TO GET LANGUAGE IDENTIFIERS ---
+                 # Directly use the list defined in WhisperProperties class definition
+                 language_items_definition = [
+                    ("auto", "Any language (detect)", ""),
+                    ("bg", "Bulgarian", ""),
+                    ("zh", "Chinese", ""),
+                    ("cs", "Czech", ""),
+                    ("da", "Danish", ""),
+                    ("nl", "Dutch", ""),
+                    ("en", "English", ""),  # Only usable for source language
+                    # ("en-US", "English (American)", ""),  # Only usable for destination language
+                    # ("en-GB", "English (British)", ""),  # Only usable for destination language
+                    ("et", "Estonian", ""),
+                    ("fi", "Finnish", ""),
+                    ("fr", "French", ""),
+                    ("de", "German", ""),
+                    ("el", "Greek", ""),
+                    ("hu", "Hungarian", ""),
+                    ("id", "Indonesian", ""),
+                    ("it", "Italian", ""),
+                    ("ja", "Japanese", ""),
+                    ("lv", "Latvian", ""),
+                    ("lt", "Lithuanian", ""),
+                    ("pl", "Polish", ""),
+                    ("pt", "Portuguese", ""),  # Only usable for source language
+                    # ("pt-PT", "Portuguese", ""),  # Only usable for destination language
+                    # ("pt-BR", "Portuguese (Brazilian)", ""),  # Only usable for destination language
+                    ("ro", "Romanian", ""),
+                    ("ru", "Russian", ""),
+                    ("sk", "Slovak", ""),
+                    ("sl", "Slovenian", ""),
+                    ("es", "Spanish", ""),
+                    ("sv", "Swedish", ""),
+                    ("tr", "Turkish", ""),
+                    ("uk", "Ukrainian", ""),
+                     # Ensure this list exactly matches the items in WhisperProperties.language
+                 ]
+                 valid_language_identifiers = {item[0] for item in language_items_definition} # Use a set for efficient lookup
+                 # --- END CORRECTION ---
+
+                 if detected_lang in valid_language_identifiers:
+                     # Check if update is needed to avoid unnecessary redraws/updates
+#                     if props.language != detected_lang:
+#                          print(f"Updating UI language from '{props.language}' to detected '{detected_lang}'")
+#                          props.language = detected_lang # Update the property group instance
+                          # Force a UI redraw if necessary (might not be needed depending on Blender version)
+                          # context.area.tag_redraw()
+                     self.report({'INFO'}, f"Detected language: {detected_lang}")
+                 else:
+                     # This case might happen if Whisper detects a language not explicitly listed in our UI
+                     print(f"Detected language '{detected_lang}' is not in the predefined EnumProperty items. UI not updated.")
+
+
+            # --- Process Segments ---
+            print("Processing segments...")
+
+            # Get settings for text strips (do this *before* the loop)
+            output_channel = props.output_channel
+            font_size = props.font_size
+            text_align_y = props.text_align_y
+            wrap_width = props.wrap_width
+            render_width = scene.render.resolution_x
+
+            # Consume the segments generator INTO a list to allow counting and progress
+            # Note: This uses more memory for very long transcriptions.
+            # An alternative is to iterate directly and estimate progress.
+            try:
+                segments_list = list(segments)
+                num_segments = len(segments_list)
+            except Exception as e_consume:
+                self.report({'ERROR'}, f"Error processing transcription segments: {e_consume}")
+                bpy.context.window_manager.progress_end()
+                return {'CANCELLED'}
+
+            if num_segments == 0:
+                self.report({'WARNING'}, "No speech segments found in the audio by faster-whisper.")
+                bpy.context.window_manager.progress_end()
+                return {'FINISHED'} # Exit cleanly if transcription returned nothing
+
+            print(f"Adding {num_segments} text strips to channel {output_channel}...")
+
+            # --- Process Segments and Create Text Strips ---
+            created_strips_count = 0
+            last_progress_update = -1 # Ensure first update
+
+            # NOW iterate over the POPULATED segments_list
+            for i, segment in enumerate(segments_list):
+                start_time = segment.start
+                end_time = segment.end
+                text = segment.text.strip()
+
+                # Calculate frame numbers
+                start_frame_calc = round(start_time * fps) + strip_start_frame
+                end_frame_calc = round(end_time * fps) + strip_start_frame
+
+                # Explicitly cast to int
+                start_frame = int(start_frame_calc)
+                end_frame = int(end_frame_calc)
+                
+                found_channel = find_first_empty_channel(start_frame,end_frame)
+                if not output_channel >= found_channel:
+                    output_channel = found_channel  
+
+                # Ensure minimum duration of 1 frame
+                if end_frame <= start_frame:
+                    end_frame = start_frame + 1
+
+                print(f"  {start_time:.2f}s -> {end_time:.2f}s ({start_frame}f -> {end_frame}f): {text}")
+
+                # --- Create the Text Strip ---
+                try:
+                    # --- Optional Debug Prints ---
+                    # print(f"  DEBUG: Preparing new_effect: name=Sub_{start_frame}, type='TEXT', channel={output_channel}, "
+                    #       f"frame_start={start_frame} (type: {type(start_frame)}), "
+                    #       f"frame_end={end_frame} (type: {type(end_frame)})")
+                    # --- End Debug Prints ---
+
+                    text_strip = scene.sequence_editor.sequences.new_effect(
+                        name=f"Sub_{start_frame}",
+                        type='TEXT',
+                        channel=output_channel,
+                        frame_start=start_frame,
+                        frame_end=end_frame
+                    )
+
+                    if text_strip:
+                        # Set text content
+                        text_strip.text = text
+
+                        # Set appearance properties
+                        text_strip.font_size = font_size
+                        text_strip.anchor_y = text_align_y
+                        text_strip.anchor_x = 'CENTER'
+
+                        # Adjust vertical position slightly
+                        if text_align_y == 'BOTTOM':
+                            text_strip.location[1] = 0.05
+                        elif text_align_y == 'TOP':
+                            text_strip.location[1] = 1.0 - 0.05 - (text_strip.font_size / scene.render.resolution_y)
+                        else: # CENTER
+                             text_strip.location[1] = 0.5
+
+                        # Set wrapping
+                        if wrap_width > 0:
+                            text_strip.wrap_width = wrap_width
+                        else:
+                            text_strip.wrap_width = 0
+
+                        # Set other useful defaults
+                        text_strip.use_shadow = True
+                        text_strip.shadow_color = (0, 0, 0, 1)
+
+                        created_strips_count += 1
+                    else:
+                         print(f"  ERROR: new_effect call returned None for segment: {text}")
+
+                except Exception as e_strip:
+                     print(f"  ERROR creating text strip for segment: {text} -> {e_strip}")
+                     import traceback
+                     traceback.print_exc()
+
+                # Update progress based on segment index
+                progress = int(((i + 1) / num_segments) * 100)
+                if progress > last_progress_update:
+                    bpy.context.window_manager.progress_update(progress)
+                    last_progress_update = progress
+                # Allow UI refresh occasionally
+                if i % 50 == 0:
+                      bpy.context.window_manager.windows.update()
+
+            # End of loop for segments_list
+
+            bpy.context.window_manager.progress_end()
+            if created_strips_count > 0:
+                # Report success based on actual strips created
+                self.report({'INFO'}, f"{current_task.capitalize()} complete. Added {created_strips_count} text strips to channel {output_channel}.")
+            elif num_segments > 0:
+                # Segments were found by whisper, but strip creation failed for all
+                 self.report({'ERROR'}, f"{current_task.capitalize()} finished. Whisper found {num_segments} segments, but failed to create text strips. Check console.")
+            else:
+                # This case should be caught earlier, but as a fallback
+                 self.report({'WARNING'}, f"{current_task.capitalize()} finished, but no segments found or created. Check console.")
+
+        except ImportError:
+             # Should be caught by initial check, but safeguard
+             self.report({'ERROR'}, "Faster-Whisper module gone missing. Please Setup again or restart Blender.")
+             bpy.context.window_manager.progress_end()
+             return {'CANCELLED'}
+        except Exception as e:
+            bpy.context.window_manager.progress_end()
+            error_message = f"An error occurred during transcription: {e}"
+            print(error_message)
+            import traceback
+            traceback.print_exc() # Print detailed traceback to Blender System Console
+            # Try to provide a more specific common error message
+            if "ffmpeg" in str(e).lower():
+                 report_msg = "Transcription failed. Ensure FFmpeg is installed and in system PATH. Check Console."
+            elif "cuda" in str(e).lower() or "nvtx" in str(e).lower() or "cublas" in str(e).lower():
+                 report_msg = "CUDA error. Ensure GPU drivers & CUDA Toolkit are installed correctly. Try CPU device. Check Console."
+            elif "memory" in str(e).lower():
+                 report_msg = "Out of memory error. Try a smaller model, 'int8' compute type, or increase system RAM/VRAM. Check Console."
+            else:
+                 report_msg = "Transcription failed. Check Blender System Console for details."
+            self.report({'ERROR'}, report_msg)
+            return {'CANCELLED'}
+
+        return {'FINISHED'}
 
 
 def import_module(self, module, install_module):
@@ -532,7 +1270,7 @@ def load_subtitles(self, file, context, offset):
             y = (render.resolution_y - int(pos[1])) / render.resolution_y
             position = True
             line.text = re.sub(r"{.+?}", "", line.text)
-        if line.end: #line.text and line.start and 
+        if line.end and line.text and line.start:
             new_strip = editor.sequences.new_effect(
                 name=line.text,
                 type="TEXT",
@@ -669,7 +1407,7 @@ class TEXT_OT_transcribe(bpy.types.Operator):
                     "install",
                     "torch",
                     "--index-url",
-                    "https://download.pytorch.org/whl/cu118",
+                    "https://download.pytorch.org/whl/cu124",
                     "--no-warn-script-location",
                     #"--user",
                     #'--target', site_packages_dir,
@@ -701,8 +1439,9 @@ class TEXT_OT_transcribe(bpy.types.Operator):
                         "install",
                         "--disable-pip-version-check",
                         "--use-deprecated=legacy-resolver",
+                        "triton-windows",
                         #"https://github.com/woct0rdho/triton-windows/releases/download/v3.2.0-windows.post9/triton-3.2.0-cp311-cp311-win_amd64.whl",
-                        "https://hf-mirror.com/LightningJay/triton-2.1.0-python3.11-win_amd64-wheel/resolve/main/triton-2.1.0-cp311-cp311-win_amd64.whl",
+                        #"https://hf-mirror.com/LightningJay/triton-2.1.0-python3.11-win_amd64-wheel/resolve/main/triton-2.1.0-cp311-cp311-win_amd64.whl",
                         "--no-warn-script-location",
                         "--upgrade",
                         #'--target', site_packages_dir,
@@ -1179,6 +1918,81 @@ class SEQUENCER_PT_panel(bpy.types.Panel):
         row.operator("text.insert_newline", text="", icon="EVENT_RETURN")
 
 
+class SEQUENCER_PT_whisper_panel(bpy.types.Panel):
+    """UI Panel in the Sequencer's Strip Properties"""
+    bl_label = "Transcription & Translation"
+    bl_idname = "SEQUENCER_PT_whisper"
+    bl_space_type = 'SEQUENCE_EDITOR'
+    bl_region_type = "UI"
+    bl_category = "Subtitle Editor"
+
+    @classmethod
+    def poll(cls, context):
+        # Only show the panel if a strip is selected (or always show?)
+        # return context.selected_sequences is not None
+        # Let's always show it for easier access to Setup
+        return context.scene is not None
+
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        props = scene.whisper_props # Get property group instance
+
+        # --- Setup Section ---
+        box = layout.box()
+        row = box.row(align=True)
+        # Display status icon based on check
+        status_icon = 'CHECKMARK' if dependencies_installed else 'ERROR'
+        if not dependencies_checked and not dependencies_installed:
+             status_icon = 'QUESTION' # Indicate unchecked state
+
+        row.label(text="Dependencies:", icon=status_icon)
+        row.operator(SEQUENCER_OT_whisper_setup.bl_idname, icon='SCRIPTPLUGINS')
+
+        # Disable transcription controls if dependencies not met
+        is_ready = dependencies_installed and faster_whisper_module is not None
+        col = layout.column()
+        col.enabled = is_ready # Disable subsequent sections if not ready
+
+        # --- Configuration Section ---
+        box = col.box()
+        # ... (existing model, device, compute, language, beam, vad props) ...
+        box.prop(props, "model_size", text="Model")
+        row = box.row(align=True)
+        row.prop(props, "device", text="Device")
+        row.prop(props, "compute_type", text="Compute")
+        box.prop(props, "language", text="Language")
+        row = box.row(align=True)
+        row.prop(props, "beam_size", text="Beam Size")
+        row.prop(props, "use_vad", text="VAD Filter")
+
+
+        # --- NEW: Subtitle Output Settings ---
+        box = col.box()
+        row = box.row(align=True)
+        row.prop(props, "output_channel", text="Channel")
+        row.prop(props, "font_size", text="Font Size")
+        row = box.row(align=True)
+        row.prop(props, "text_align_y", text="V Align")
+        row.prop(props, "wrap_width", text="Wrap Width")
+
+
+        # --- Actions Section ---
+        box = col.box()
+        action_col = box.column(align=True)
+
+        strip_selected = get_selected_strip(context) is not None and SEQUENCER_OT_whisper_transcribe.poll(context)
+        action_col.enabled = strip_selected
+
+        # UPDATE BUTTON TEXTS
+        op_transcribe = action_col.operator(SEQUENCER_OT_whisper_transcribe.bl_idname, text="Transcribe to Text Strips", icon='REC')
+        op_transcribe.task = "transcribe"
+
+        op_translate = action_col.operator(SEQUENCER_OT_whisper_transcribe.bl_idname, text="Translate to Text Strips (EN)", icon='WORDWRAP_ON')
+        op_translate.task = "translate"
+
+
 def import_subtitles(self, context):
     layout = self.layout
     layout.separator()
@@ -1211,6 +2025,7 @@ def setText(self, context):
 
 
 classes = (
+    SEQUENCER_PT_panel,
     subtitle_preferences,
     TextStripItem,
     SEQUENCER_UL_List,
@@ -1227,30 +2042,67 @@ classes = (
     SEQUENCER_PT_export_list_subtitles,
     SEQUENCER_OT_copy_textprops_to_selected,
     TEXT_OT_transcribe,
-    SEQUENCER_PT_panel,
+    WhisperProperties,
+    SEQUENCER_OT_whisper_setup,
+    SEQUENCER_OT_whisper_transcribe,
+    SEQUENCER_PT_whisper_panel,
 )
 
 
 def register():
+    print(f"Registering {bl_info['name']} Addon")
+    # Add the property group to the Scene type
     for cls in classes:
-        bpy.utils.register_class(cls)
+        try:
+            bpy.utils.register_class(cls)
+        except ValueError as e:
+             print(f"Class {cls.__name__} already registered? Skipping. Error: {e}")
+        except Exception as e:
+             print(f"Failed to register class {cls.__name__}: {e}")
+    bpy.types.Scene.whisper_props = PointerProperty(type=WhisperProperties)
+
+    # Reset global flags on registration / Blender start
+    global dependencies_checked, dependencies_installed, faster_whisper_module
+    dependencies_checked = False
+    dependencies_installed = False
+    faster_whisper_module = None
+    # Perform an initial check silently on registration/startup
+    print("Performing initial dependency check on startup...")
+    check_faster_whisper()
+    dependencies_checked = True # Mark as checked
+    
     bpy.types.Scene.text_strip_items = bpy.props.CollectionProperty(type=TextStripItem)
     bpy.types.Scene.text_strip_items_index = bpy.props.IntProperty(
         name="Index for Subtitle Editor", default=0, update=setText
     )
     bpy.types.SEQUENCER_MT_add.append(import_subtitles)
-    bpy.types.SEQUENCER_MT_add.append(transcribe)
+    #bpy.types.SEQUENCER_MT_add.append(transcribe)
     bpy.types.SEQUENCER_PT_effect.append(copyto_panel_append)
 
 
 def unregister():
     bpy.types.SEQUENCER_PT_effect.remove(copyto_panel_append)
+    print(f"Unregistering {bl_info['name']} Addon")
+    # Delete the property group from Scene first
+    del Scene.whisper_props
+
     for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+        try:
+            bpy.utils.unregister_class(cls)
+        except RuntimeError as e:
+            print(f"Failed to unregister class {cls.__name__}: {e}")
+        except Exception as e:
+             print(f"Error unregistering class {cls.__name__}: {e}")
+
+    # Clear globals on unregister (optional, good practice)
+    global dependencies_checked, dependencies_installed, faster_whisper_module
+    dependencies_checked = False
+    dependencies_installed = False
+    faster_whisper_module = None
     del bpy.types.Scene.text_strip_items
     del bpy.types.Scene.text_strip_items_index
     bpy.types.SEQUENCER_MT_add.remove(import_subtitles)
-    bpy.types.SEQUENCER_MT_add.append(transcribe)
+    #bpy.types.SEQUENCER_MT_add.append(transcribe)
 
 
 # Register the addon when this script is run
