@@ -558,15 +558,19 @@ class SEQUENCER_OT_whisper_transcribe(Operator):
             return {'CANCELLED'}
 
         try:
-            audio_filepath = bpy.path.abspath(strip.sound.filepath)
-            if not os.path.exists(audio_filepath):
-                # Try the regular filepath as fallback
-                audio_filepath = bpy.path.abspath(strip.sound.filepath)
-                if not os.path.exists(audio_filepath):
-                    self.report({'ERROR'}, f"Audio file not found: {strip.sound.filepath}")
-                    return {'CANCELLED'}        
+            if not strip.sound or not strip.sound.filepath:
+                 self.report({'ERROR'}, f"Audio strip '{strip.name}' missing sound data or filepath.")
+                 return {'CANCELLED'}
+
+            audio_filepath = bpy.path.abspath(strip.sound.filepath) # Get path once
+
+            if not os.path.exists(audio_filepath): # Check existence once
+                self.report({'ERROR'}, f"Audio file not found: {audio_filepath}")
+                return {'CANCELLED'}
         except Exception as e:
-             self.report({'ERROR'}, f"Error accessing audio filepath: {e}")
+             self.report({'ERROR'}, f"Error accessing audio filepath for '{strip.name}': {e}")
+             import traceback
+             traceback.print_exc()
              return {'CANCELLED'}
 
         allowed_extensions = {'.wav', '.mp3', '.ogg', '.flac', '.m4a', '.aac', '.wma', '.opus'} # Add more if needed
@@ -748,12 +752,6 @@ class SEQUENCER_OT_whisper_transcribe(Operator):
 
                 # --- Create the Text Strip ---
                 try:
-                    # --- Optional Debug Prints ---
-                    # print(f"  DEBUG: Preparing new_effect: name=Sub_{start_frame}, type='TEXT', channel={output_channel}, "
-                    #       f"frame_start={start_frame} (type: {type(start_frame)}), "
-                    #       f"frame_end={end_frame} (type: {type(end_frame)})")
-                    # --- End Debug Prints ---
-
                     text_strip = scene.sequence_editor.sequences.new_effect(
                         name=f"Sub_{start_frame}",
                         type='TEXT',
@@ -1974,7 +1972,7 @@ class SEQUENCER_PT_whisper_panel(bpy.types.Panel):
         row.prop(props, "output_channel", text="Channel")
         row.prop(props, "font_size", text="Font Size")
         row = box.row(align=True)
-        row.prop(props, "text_align_y", text="V Align")
+        row.prop(props, "text_align_y", text="")
         row.prop(props, "wrap_width", text="Wrap Width")
 
 
