@@ -54,6 +54,6 @@ https://user-images.githubusercontent.com/1322593/223357037-8ff2a9c8-9ce3-410d-a
 * [pysubs2](https://github.com/tkarabela/pysubs2)
 * [SRTranslator](https://github.com/sinedie/SRTranslator)
 * [openai-whisper](https://github.com/openai/whisper)
-
+* [Faster Whisper](https://github.com/SYSTRAN/faster-whisper)
 
 
