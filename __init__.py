@@ -20,7 +20,7 @@ bl_info = {
     "name": "Subtitle Editor",
     "description": "Displays a list of all Subtitle Editor in the VSE and allows editing of their text.",
     "author": "tintwotin",
-    "version": (1, 1),
+    "version": (1, 2),
     "blender": (4, 4, 0),
     "location": "Sequencer > Side Bar > Subtitle Editor Tab",
     "warning": "",

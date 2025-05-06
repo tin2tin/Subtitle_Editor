@@ -20,6 +20,7 @@ https://user-images.githubusercontent.com/1322593/223361423-36917ff0-2756-4e80-8
 * Copy text styling and font from active strip to all selected strips.
 * Change Whisper model under Preferences.
 * System Console pop-up when doing file-related processing.
+* Import .lrc files for lyrics.
 
 ## Installation
 (As for Linux and MacOS, if anything differs in installation, then please share instructions.)
@@ -55,5 +56,5 @@ https://user-images.githubusercontent.com/1322593/223357037-8ff2a9c8-9ce3-410d-a
 * [SRTranslator](https://github.com/sinedie/SRTranslator)
 * [openai-whisper](https://github.com/openai/whisper)
 * [Faster Whisper](https://github.com/SYSTRAN/faster-whisper)
-
+* [pylrc](https://github.com/doakey3/pylrc)
 
