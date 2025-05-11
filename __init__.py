@@ -203,7 +203,7 @@ def install_dependencies(blender_python_exe):
     # Construct the pip install command
     cmd = [
         blender_python_exe, "-m", "pip", "install", "--upgrade",
-        "--user", "--no-cache-dir", "onnxruntime"
+        "--no-cache-dir", "onnxruntime"
     ]
     print(f"Running installation command: {' '.join(cmd)}")
 
@@ -227,7 +227,7 @@ def install_dependencies(blender_python_exe):
     # Construct the pip install command
     cmd = [
         blender_python_exe, "-m", "pip", "install", "--upgrade",
-        "--user", "--no-cache-dir", REQUIRED_PACKAGE
+        "--no-cache-dir", REQUIRED_PACKAGE
     ]
     print(f"Running installation command: {' '.join(cmd)}")
 
@@ -1407,7 +1407,6 @@ class TEXT_OT_transcribe(bpy.types.Operator):
                     "--index-url",
                     "https://download.pytorch.org/whl/cu124",
                     "--no-warn-script-location",
-                    #"--user",
                     #'--target', site_packages_dir,
                 ]
             )
@@ -1420,7 +1419,6 @@ class TEXT_OT_transcribe(bpy.types.Operator):
                     "install",
                     "torch",
                     "--no-warn-script-location",
-                    #"--user",
                     #'--target', site_packages_dir,
                 ]
             )  
