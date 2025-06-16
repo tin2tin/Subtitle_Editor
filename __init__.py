@@ -2080,7 +2080,7 @@ def unregister():
     bpy.types.SEQUENCER_PT_effect.remove(copyto_panel_append)
     print(f"Unregistering {bl_info['name']} Addon")
     # Delete the property group from Scene first
-    del Scene.whisper_props
+    del bpy.types.Scene.whisper_props
 
     for cls in reversed(classes):
         try:
