@@ -20,7 +20,7 @@ bl_info = {
     "name": "Subtitle Editor",
     "description": "Displays a list of all Subtitle Editor in the VSE and allows editing of their text.",
     "author": "tintwotin",
-    "version": (1, 2),
+    "version": (1, 1),
     "blender": (4, 4, 0),
     "location": "Sequencer > Side Bar > Subtitle Editor Tab",
     "warning": "",
@@ -1189,71 +1189,6 @@ class SEQUENCER_OT_insert_newline(bpy.types.Operator):
         )
         return {"FINISHED"}
 
-def load_lyrics(self, file, context, offset):
-    app_path = site.USER_SITE
-    if app_path not in sys.path:
-        sys.path.append(app_path)
-    pybin = sys.executable
-    
-    print("Please wait. Checking pylrc module...")
-
-    if not import_module(self, "pylrc", "pylrc"):
-        return {"CANCELLED"}
-    
-    import pylrc
-
-    render = bpy.context.scene.render
-    fps = render.fps / render.fps_base
-    fps_conv = fps #/ 1000
-
-    editor = bpy.context.scene.sequence_editor
-    sequences = bpy.context.sequences
-    if not sequences:
-        addSceneChannel = 1
-    else:
-        channels = [s.channel for s in sequences]
-        channels = sorted(list(set(channels)))
-        empty_channel = channels[-1] + 1
-        addSceneChannel = empty_channel
-
-    subs = None
-    with open(file, "r", encoding="UTF-8") as lyric_file:
-        subs = pylrc.parse(lyric_file.read())
-
-    if not subs:
-        print("No file imported.")
-        self.report({"INFO"}, "No file imported")
-        return {"CANCELLED"}
-
-    for i in range(len(subs)):
-        line = subs[i]
-        print(str(line.time) + ":" + line.text)
-        line.start = line.time
-        if (i < len(subs) - 1):
-            line.end = subs[i + 1].time
-        else:
-            line.end = line.start + 100
-
-        if line.end and line.text and line.start:
-            new_strip = editor.sequences.new_effect(
-                name=line.text,
-                type="TEXT",
-                channel=addSceneChannel,
-                frame_start=int(line.start * fps_conv) + offset,
-                frame_end=int(line.end * fps_conv) + offset,
-            )
-            new_strip.text = line.text
-            new_strip.wrap_width = 0.68
-            new_strip.font_size = 44
-            new_strip.location[1] = 0.25
-            new_strip.anchor_x = "CENTER"
-            new_strip.anchor_y = "TOP"
-            new_strip.use_shadow = True
-            new_strip.use_box = True
-    # Refresh the UIList
-    bpy.ops.text.refresh_list()
-    
- 
 
 def load_subtitles(self, file, context, offset):
     
@@ -1611,7 +1546,7 @@ class SEQUENCER_OT_import_subtitles(Operator, ImportHelper):
     filename_ext = [".srt", ".ass"]
 
     filter_glob: StringProperty(
-        default="*.srt;*.ass;*.ssa;*.mpl2;*.tmp;*.vtt;*.microdvd;*.lrc",
+        default="*.srt;*.ass;*.ssa;*.mpl2;*.tmp;*.vtt;*.microdvd",
         options={"HIDDEN"},
         maxlen=255,
     )
@@ -1742,10 +1677,7 @@ class SEQUENCER_OT_import_subtitles(Operator, ImportHelper):
         if not file:
             return {"CANCELLED"}
         offset = 0
-        if file.endswith(".lrc"):
-            load_lyrics(self, file, context, offset)
-        else:
-            load_subtitles(self, file, context, offset)
+        load_subtitles(self, file, context, offset)
 
         return {"FINISHED"}
 
