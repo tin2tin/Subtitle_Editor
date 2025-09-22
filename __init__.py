@@ -1855,6 +1855,9 @@ class SEQUENCER_OT_copy_textprops_to_selected(Operator):
                 strip.use_bold = active.use_bold
                 strip.font_size = active.font_size
                 strip.color = active.color
+                strip.use_outline = active.use_outline
+                strip.outline_color = active.outline_color
+                strip.outline_width = active.outline_width
                 strip.use_shadow = active.use_shadow
                 strip.shadow_color = active.shadow_color
                 strip.use_box = active.use_box
