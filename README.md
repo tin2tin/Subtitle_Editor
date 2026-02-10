@@ -37,7 +37,7 @@ https://user-images.githubusercontent.com/1322593/223361423-36917ff0-2756-4e80-8
 
 ## Installation
 
-1.  **Blender Version**: This addon requires **Blender 4.4** or newer.
+1.  **Blender Version**: This version of the addon requires **Blender 5.0** or newer.
 2.  **Download**: [Download the add-on as a .zip file](https://github.com/tin2tin/subtitle_editor/archive/refs/heads/main.zip). Do not unzip it.
 3.  **Windows Users**: For the initial setup, you must run Blender as an Administrator to allow the addon to install dependencies. Right-click the Blender icon and choose "Run as administrator". This is only needed once.
 4.  **Install the Add-on**: In Blender, go to `Edit > Preferences > Add-ons` and click `Install...`. Select the downloaded `.zip` file.
