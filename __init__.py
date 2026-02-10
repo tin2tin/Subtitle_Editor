@@ -45,8 +45,52 @@ from bpy_extras.io_utils import ImportHelper
 from datetime import timedelta
 os_platform = platform.system()  # 'Linux', 'Darwin', 'Java', 'Windows'
 
+# Property accessors that handle both Blender 4 and 5 property names
+def obj_strips(obj):
+    if hasattr(obj, "strips"):
+        return obj.strips
+    if hasattr(obj, "sequences"):
+        return obj.sequences
+    raise AttributeError("Object has no strips/sequences collection.")
+
+def obj_strips_new_effect(obj, frame_start=None, frame_end=None, **kwargs):
+    if hasattr(obj, "strips"):
+        return obj.strips.new_effect(frame_start=frame_start, length=frame_end - frame_start, **kwargs)
+    hasattr(obj, "sequences"):
+        return obj.sequences.new_effect(frame_start=frame_start, frame_end=frame_end, **kwargs)
+    raise AttributeError("Object has no strips/sequences collection.")
+
+def vse_strips_all(seq_editor):
+    if hasattr(seq_editor, "strips_all"):
+        return seq_editor.strips_all
+    if hasattr(seq_editor, "sequences_all"):
+        return seq_editor.sequences_all
+    raise AttributeError("Sequence editor has no strips_all/sequences_all collection.")
+
+def vse_active_strip(seq_editor):
+    if hasattr(seq_editor, "active_strip"):
+        return seq_editor.active_strip
+    if hasattr(seq_editor, "active_sequence"):
+        return seq_editor.active_sequence
+    return None
+
+def vse_set_active_strip(seq_editor, strip):
+    if hasattr(seq_editor, "active_strip"):
+        seq_editor.active_strip = strip
+    elif hasattr(seq_editor, "active_sequence"):
+        seq_editor.active_sequence = strip
+    else:
+        raise AttributeError("Sequence editor has no active_strip/active_sequence property.")
+
+def context_selected_strips(context):
+    if hasattr(context, "selected_strips"):
+        return context.selected_strips
+    if hasattr(context, "selected_sequences"):
+        return context.selected_sequences
+    return []
+
 def get_strip_by_name(name):
-    for strip in bpy.context.scene.sequence_editor.sequences[0:]:
+    for strip in obj_strips(bpy.context.scene.sequence_editor)[0:]:
         if strip.name == name:
             return strip
     return None
@@ -59,8 +103,8 @@ faster_whisper_module = None
 
 
 def find_first_empty_channel(start_frame, end_frame):
-    for ch in range(1, len(bpy.context.scene.sequence_editor.sequences_all) + 1):
-        for seq in bpy.context.scene.sequence_editor.sequences_all:
+    for ch in range(1, len(vse_strips_all(bpy.context.scene.sequence_editor)) + 1):
+        for seq in vse_strips_all(bpy.context.scene.sequence_editor):
             if (
                 seq.channel == ch
                 and seq.frame_final_start < end_frame
@@ -73,7 +117,7 @@ def find_first_empty_channel(start_frame, end_frame):
 
 
 def update_text(self, context):
-    for strip in bpy.context.scene.sequence_editor.sequences:
+    for strip in obj_strips(bpy.context.scene.sequence_editor):
         if strip.type == "TEXT" and strip.name == self.name:
             # Update the text of the text strip
             strip.text = self.text
@@ -81,9 +125,9 @@ def update_text(self, context):
             get_strip = get_strip_by_name(self.name)
             if get_strip:
                 # Deselect all strips.
-                for seq in context.scene.sequence_editor.sequences_all:
+                for seq in vse_strips_all(context.scene.sequence_editor):
                     seq.select = False
-                bpy.context.scene.sequence_editor.active_strip = strip
+                vse_set_active_strip(bpy.context.scene.sequence_editor, strip)
                 get_strip.select = True
 
                 # Set the current frame to the start frame of the active strip
@@ -124,11 +168,11 @@ def set_system_console_topmost(top):
 
 def get_selected_strip(context):
     """Gets the selected non-meta audio strip."""
-    for strip in reversed(context.selected_sequences):
+    for strip in reversed(context_selected_strips(context)):
         if strip.type == 'SOUND' and not strip.mute:
             # Check if inside a meta strip and return None if so
             # (This check might need refinement depending on desired behavior with meta strips)
-            # if context.selected_sequences and context.selected_sequences[0].type == 'META':
+            # if context_selected_strips(context) and context_selected_strips(context)[0].type == 'META':
             #     return None
             return strip
     return None
@@ -752,7 +796,8 @@ class SEQUENCER_OT_whisper_transcribe(Operator):
 
                 # --- Create the Text Strip ---
                 try:
-                    text_strip = scene.sequence_editor.sequences.new_effect(
+                    text_strip = obj_strips_new_effect(
+                        scene.sequence_editor,
                         name=f"Sub_{start_frame}",
                         type='TEXT',
                         channel=output_channel,
@@ -908,15 +953,14 @@ class SEQUENCER_OT_refresh_list(bpy.types.Operator):
 
 
     def execute(self, context):
-        
-        active = context.scene.sequence_editor.active_strip
+        active = vse_active_strip(context.scene.sequence_editor)
         # Clear the list
         context.scene.text_strip_items.clear()
 
         # Get a list of all Text Strips in the VSE
         text_strips = [
             strip
-            for strip in bpy.context.scene.sequence_editor.sequences
+            for strip in obj_strips(bpy.context.scene.sequence_editor)
             if strip.type == "TEXT"
         ]
 
@@ -929,10 +973,10 @@ class SEQUENCER_OT_refresh_list(bpy.types.Operator):
             item.name = strip.name
             item.text = strip.text
         # Select only the active strip in the UI list
-        for seq in context.scene.sequence_editor.sequences_all:
+        for seq in vse_strips_all(context.scene.sequence_editor):
             seq.select = False
         if active:
-            context.scene.sequence_editor.active_strip = active
+            vse_set_active_strip(context.scene.sequence_editor, active)
             active.select = True
             # Set the current frame to the start frame of the active strip
             bpy.context.scene.frame_set(int(active.frame_start))
@@ -948,7 +992,7 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        text_strips = scene.sequence_editor.sequences_all
+        text_strips = vse_strips_all(scene.sequence_editor)
 
         # Get the selected text strip from the UI list
         index = scene.text_strip_items_index
@@ -963,8 +1007,8 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
             chan = find_first_empty_channel(in_frame, out_frame)
 
             # Add a new text strip after the selected strip
-            strips = scene.sequence_editor.sequences
-            new_strip = strips.new_effect(
+            new_strip = obj_strips_new_effect(
+                scene.sequence_editor,
                 name="Text",
                 type="TEXT",
                 channel=chan,
@@ -988,15 +1032,15 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
                 new_strip.location = strip.location
                 new_strip.anchor_x = strip.anchor_x
                 new_strip.anchor_y = strip.anchor_y
-                context.scene.sequence_editor.active_strip = new_strip
+                vse_set_active_strip(context.scene.sequence_editor, new_strip)
             self.report({"INFO"}, "Copying settings from the selected item")
         else:
-            strips = scene.sequence_editor.sequences
             chan = find_first_empty_channel(
                 context.scene.frame_current, context.scene.frame_current + 100
             )
 
-            new_strip = strips.new_effect(
+            new_strip = obj_strips_new_effect(
+                scene.sequence_editor,
                 name="Text",
                 type="TEXT",
                 channel=chan,
@@ -1010,7 +1054,7 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
             new_strip.anchor_y = "TOP"
             new_strip.use_shadow = True
             new_strip.use_box = True
-            context.scene.sequence_editor.active_strip = new_strip
+            vse_set_active_strip(context.scene.sequence_editor, new_strip)
             new_strip.select = True
         # Refresh the UIList
         bpy.ops.text.refresh_list()
@@ -1047,21 +1091,21 @@ class SEQUENCER_OT_delete_strip(bpy.types.Operator):
         strip = get_strip_by_name(strip_name)
         if strip:
             # Select all strips
-            for seq in bpy.context.scene.sequence_editor.sequences_all:
+            for seq in vse_strips_all(bpy.context.scene.sequence_editor):
                 seq.select = True
             # Split out
             scene.frame_current = strip.frame_final_start + strip.frame_final_duration
             bpy.ops.sequencer.split(frame=scene.frame_current, type="SOFT", side="LEFT")
 
             # Select all strips
-            for seq in bpy.context.scene.sequence_editor.sequences_all:
+            for seq in vse_strips_all(bpy.context.scene.sequence_editor):
                 seq.select = True
             # Split in
             frame_current = scene.frame_current = strip.frame_final_start
             bpy.ops.sequencer.split(frame=frame_current, type="SOFT", side="RIGHT")
 
             # Deslect all
-            for s in bpy.context.scene.sequence_editor.sequences_all:
+            for s in vse_strips_all(bpy.context.scene.sequence_editor):
                 s.select = False
             # Select all between in and out
             frame_range = range(
@@ -1070,7 +1114,7 @@ class SEQUENCER_OT_delete_strip(bpy.types.Operator):
             )
             for s in frame_range:
                 # scene.frame_current = s
-                for stri in bpy.context.scene.sequence_editor.sequences_all:
+                for stri in vse_strips_all(bpy.context.scene.sequence_editor):
                     if (
                         stri.frame_final_start
                         <= s
@@ -1116,7 +1160,7 @@ class SEQUENCER_OT_delete_item(bpy.types.Operator):
         strip = get_strip_by_name(strip_name)
         if strip:
             # Deselect all strips
-            for seq in context.scene.sequence_editor.sequences_all:
+            for seq in vse_strips_all(context.scene.sequence_editor):
                 seq.select = False
             # Delete the strip
             strip.select = True
@@ -1210,7 +1254,7 @@ def load_subtitles(self, file, context, offset):
     fps_conv = fps / 1000
 
     editor = bpy.context.scene.sequence_editor
-    sequences = bpy.context.sequences
+    sequences = obj_strips(context)
     if not sequences:
         addSceneChannel = 1
     else:
@@ -1269,7 +1313,8 @@ def load_subtitles(self, file, context, offset):
             position = True
             line.text = re.sub(r"{.+?}", "", line.text)
         if line.end and line.text and line.start:
-            new_strip = editor.sequences.new_effect(
+            new_strip = obj_strips_new_effect(
+                editor,
                 name=line.text,
                 type="TEXT",
                 channel=addSceneChannel,
@@ -1462,9 +1507,8 @@ class TEXT_OT_transcribe(bpy.types.Operator):
         import whisper
         from whisper.utils import get_writer
         current_scene = bpy.context.scene
-        try:
-            active = current_scene.sequence_editor.active_strip
-        except AttributeError:
+        active = vse_active_strip(current_scene.sequence_editor)
+        if active is None:
             self.report({"INFO"}, "No active strip selected!")
             return {"CANCELLED"}
         if not active:
@@ -1763,7 +1807,7 @@ class SEQUENCER_OT_export_list_subtitles(Operator, ImportHelper):
         # Get a list of all Text Strips in the VSE
         text_strips = [
             strip
-            for strip in bpy.context.scene.sequence_editor.sequences
+            for strip in obj_strips(bpy.context.scene.sequence_editor)
             if strip.type == "TEXT"
         ]
 
@@ -1842,12 +1886,11 @@ class SEQUENCER_OT_copy_textprops_to_selected(Operator):
 
     def execute(self, context):
         current_scene = bpy.context.scene
-        try:
-            active = current_scene.sequence_editor.active_strip
-        except AttributeError:
+        active = vse_active_strip(current_scene.sequence_editor)
+        if active is None:
             self.report({"INFO"}, "No active strip selected")
             return {"CANCELLED"}
-        for strip in context.selected_sequences:
+        for strip in context_selected_strips(context):
             if strip.type == active.type == "TEXT":
                 strip.wrap_width = active.wrap_width
                 strip.font = active.font
@@ -1928,7 +1971,7 @@ class SEQUENCER_PT_whisper_panel(bpy.types.Panel):
     @classmethod
     def poll(cls, context):
         # Only show the panel if a strip is selected (or always show?)
-        # return context.selected_sequences is not None
+        # return context_selected_strips(context) is not None
         # Let's always show it for easier access to Setup
         return context.scene is not None
 
@@ -2005,7 +2048,9 @@ def transcribe(self, context):
 
 
 def copyto_panel_append(self, context):
-    strip = context.active_sequence_strip
+    strip = vse_active_strip(context.scene.sequence_editor)
+    if strip is None:
+        return
     strip_type = strip.type
     if strip_type == "TEXT":
         layout = self.layout
@@ -2076,11 +2121,17 @@ def register():
     )
     bpy.types.SEQUENCER_MT_add.append(import_subtitles)
     #bpy.types.SEQUENCER_MT_add.append(transcribe)
-    bpy.types.SEQUENCER_PT_effect.append(copyto_panel_append)
+    if hasattr(bpy.types, "SEQUENCER_PT_effect"):
+        bpy.types.SEQUENCER_PT_effect.append(copyto_panel_append)
+    else:
+        bpy.types.STRIP_PT_effect.append(copyto_panel_append)
 
 
 def unregister():
-    bpy.types.SEQUENCER_PT_effect.remove(copyto_panel_append)
+    if hasattr(bpy.types, "SEQUENCER_PT_effect"):
+        bpy.types.SEQUENCER_PT_effect.remove(copyto_panel_append)
+    else:
+        bpy.types.STRIP_PT_effect.remove(copyto_panel_append)
     print(f"Unregistering {bl_info['name']} Addon")
     # Delete the property group from Scene first
     del bpy.types.Scene.whisper_props
@@ -2101,7 +2152,7 @@ def unregister():
     del bpy.types.Scene.text_strip_items
     del bpy.types.Scene.text_strip_items_index
     bpy.types.SEQUENCER_MT_add.remove(import_subtitles)
-    #bpy.types.SEQUENCER_MT_add.append(transcribe)
+    #bpy.types.SEQUENCER_MT_add.remove(transcribe)
 
 
 # Register the addon when this script is run
