@@ -21,7 +21,7 @@ bl_info = {
     "description": "Displays a list of all Subtitle Editor in the VSE and allows editing of their text.",
     "author": "tintwotin",
     "version": (1, 1),
-    "blender": (4, 4, 0),
+    "blender": (5, 2, 0),
     "location": "Sequencer > Side Bar > Subtitle Editor Tab",
     "warning": "",
     "doc_url": "",
@@ -45,13 +45,19 @@ from bpy_extras.io_utils import ImportHelper
 from datetime import timedelta
 os_platform = platform.system()  # 'Linux', 'Darwin', 'Java', 'Windows'
 
+def get_seq_scene(context=None):
+    """Return the scene the VSE is editing (Blender 5.0+ uses sequencer_scene)."""
+    ctx = context or bpy.context
+    return getattr(ctx, 'sequencer_scene', None) or ctx.scene
+
+
 def get_strip_by_name(name):
-    for strip in bpy.context.scene.sequence_editor.sequences[0:]:
+    for strip in get_seq_scene().sequence_editor.strips[0:]:
         if strip.name == name:
             return strip
     return None
 
-FASTER_WHISPER_VERSION = "1.0.3" # Or latest known stable version
+FASTER_WHISPER_VERSION = "1.2.1"
 REQUIRED_PACKAGE = f"faster-whisper=={FASTER_WHISPER_VERSION}"
 dependencies_checked = False
 dependencies_installed = False
@@ -59,8 +65,9 @@ faster_whisper_module = None
 
 
 def find_first_empty_channel(start_frame, end_frame):
-    for ch in range(1, len(bpy.context.scene.sequence_editor.sequences_all) + 1):
-        for seq in bpy.context.scene.sequence_editor.sequences_all:
+    seq_scene = get_seq_scene()
+    for ch in range(1, len(seq_scene.sequence_editor.strips_all) + 1):
+        for seq in seq_scene.sequence_editor.strips_all:
             if (
                 seq.channel == ch
                 and seq.frame_final_start < end_frame
@@ -73,7 +80,8 @@ def find_first_empty_channel(start_frame, end_frame):
 
 
 def update_text(self, context):
-    for strip in bpy.context.scene.sequence_editor.sequences:
+    seq_scene = get_seq_scene(context)
+    for strip in seq_scene.sequence_editor.strips:
         if strip.type == "TEXT" and strip.name == self.name:
             # Update the text of the text strip
             strip.text = self.text
@@ -81,9 +89,9 @@ def update_text(self, context):
             get_strip = get_strip_by_name(self.name)
             if get_strip:
                 # Deselect all strips.
-                for seq in context.scene.sequence_editor.sequences_all:
+                for seq in seq_scene.sequence_editor.strips_all:
                     seq.select = False
-                bpy.context.scene.sequence_editor.active_strip = strip
+                seq_scene.sequence_editor.active_strip = strip
                 get_strip.select = True
 
                 # Set the current frame to the start frame of the active strip
@@ -124,11 +132,11 @@ def set_system_console_topmost(top):
 
 def get_selected_strip(context):
     """Gets the selected non-meta audio strip."""
-    for strip in reversed(context.selected_sequences):
+    for strip in reversed(context.selected_strips):
         if strip.type == 'SOUND' and not strip.mute:
             # Check if inside a meta strip and return None if so
             # (This check might need refinement depending on desired behavior with meta strips)
-            # if context.selected_sequences and context.selected_sequences[0].type == 'META':
+            # if context.selected_strips and context.selected_strips[0].type == 'META':
             #     return None
             return strip
     return None
@@ -188,6 +196,93 @@ def check_faster_whisper():
         print(f"An unexpected error occurred during faster-whisper import check: {e}")
         return False
 
+def ensure_python_headers(blender_python_exe):
+    """Download Python.h and dev headers from python.org source tarball if missing."""
+    import urllib.request, tarfile, tempfile
+
+    try:
+        r = subprocess.run(
+            [blender_python_exe, '-c',
+             'import sysconfig; print(sysconfig.get_path("include"))'],
+            capture_output=True, text=True, timeout=10)
+        include_dir = r.stdout.strip()
+    except Exception as e:
+        print(f"Cannot determine Python include dir: {e}")
+        return False
+
+    # Check that the headers look complete (Python.h + patchlevel.h are the two common failures)
+    if (os.path.exists(os.path.join(include_dir, 'Python.h')) and
+            os.path.exists(os.path.join(include_dir, 'patchlevel.h'))):
+        print(f"Python headers already present at {include_dir}")
+        return True
+
+    try:
+        r = subprocess.run(
+            [blender_python_exe, '-c',
+             'import sys; v=sys.version_info; print(f"{v.major}.{v.minor}.{v.micro}")'],
+            capture_output=True, text=True, timeout=10)
+        py_ver = r.stdout.strip()
+    except Exception as e:
+        print(f"Cannot determine Python version: {e}")
+        return False
+
+    print(f"Python.h missing — downloading CPython {py_ver} headers from python.org (~20 MB)...")
+    url = f"https://www.python.org/ftp/python/{py_ver}/Python-{py_ver}.tgz"
+    tmp = os.path.join(tempfile.gettempdir(), f"Python-{py_ver}.tgz")
+
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "BlenderAddon/1.0"})
+        with urllib.request.urlopen(req, timeout=120) as resp, open(tmp, 'wb') as f:
+            f.write(resp.read())
+
+        prefix = f"Python-{py_ver}/"
+        extracted = 0
+        os.makedirs(include_dir, exist_ok=True)
+
+        with tarfile.open(tmp, 'r:*') as tar:
+            for member in tar.getmembers():
+                name = member.name.replace('\\', '/')
+                rel = name[len(prefix):] if name.startswith(prefix) else name
+
+                # Extract Include/ → include_dir/
+                if rel.startswith('Include/'):
+                    dest_rel = rel[len('Include/'):]
+                    if not dest_rel:
+                        continue
+                    dest = os.path.join(include_dir, dest_rel.replace('/', os.sep))
+                # Windows-specific pyconfig.h lives under PC/
+                elif rel == 'PC/pyconfig.h':
+                    dest = os.path.join(include_dir, 'pyconfig.h')
+                else:
+                    continue
+
+                if not member.isfile():
+                    continue
+                file_obj = tar.extractfile(member)
+                if file_obj is None:
+                    continue
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                with file_obj as src, open(dest, 'wb') as f:
+                    f.write(src.read())
+                extracted += 1
+
+        os.unlink(tmp)
+
+        if os.path.exists(os.path.join(include_dir, 'Python.h')):
+            print(f"Python headers installed ({extracted} files) → {include_dir}")
+            return True
+        print(f"Extracted {extracted} files but Python.h still missing.")
+        return False
+
+    except Exception as e:
+        print(f"Failed to download Python headers: {e}")
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+        return False
+
+
 def install_dependencies(blender_python_exe):
     """Attempts to install faster-whisper using pip. Returns (bool success, str message)."""
     global dependencies_installed
@@ -224,10 +319,46 @@ def install_dependencies(blender_python_exe):
         dependencies_installed = False
         return False, report_message
     
+    # Pin huggingface-hub to >=1.0 to prevent pip from downgrading the version bundled with Blender
+    subprocess.run(
+        [blender_python_exe, "-m", "pip", "install", "--no-cache-dir", "huggingface-hub>=1.0"],
+        capture_output=True, text=True, encoding='utf-8', errors='replace'
+    )
+
+    # Strategy 1: try pre-built binary wheel for av (av>=13 has abi3 wheels for Python 3.13)
+    av_installed = False
+    cmd_av = [blender_python_exe, "-m", "pip", "install",
+              "--no-cache-dir", "--only-binary=:all:", "av>=11"]
+    print(f"Trying pre-built av wheel (any version >=11)...")
+    try:
+        subprocess.run(cmd_av, capture_output=True, text=True, check=True,
+                       encoding='utf-8', errors='replace')
+        print("av installed (pre-built wheel).")
+        av_installed = True
+    except subprocess.CalledProcessError:
+        pass
+
+    # Strategy 2: no binary wheel found — download CPython headers then build from source
+    if not av_installed:
+        print("No pre-built av wheel found on PyPI. Attempting source build with downloaded headers...")
+        if ensure_python_headers(blender_python_exe):
+            cmd_av_src = [blender_python_exe, "-m", "pip", "install",
+                          "--no-cache-dir", "av>=11.0,<13"]
+            print(f"Running installation command: {' '.join(cmd_av_src)}")
+            try:
+                subprocess.run(cmd_av_src, capture_output=True, text=True, check=True,
+                               encoding='utf-8', errors='replace')
+                print("av installed successfully (built from source).")
+                av_installed = True
+            except subprocess.CalledProcessError as e:
+                print(f"WARNING: av source build failed:\n{e.stderr[:800]}")
+        else:
+            print("WARNING: Could not obtain Python headers — av source build will likely fail.")
+
     # Construct the pip install command
     cmd = [
         blender_python_exe, "-m", "pip", "install", "--upgrade",
-        "--no-cache-dir", REQUIRED_PACKAGE
+        "--no-cache-dir", "--prefer-binary", REQUIRED_PACKAGE
     ]
     print(f"Running installation command: {' '.join(cmd)}")
 
@@ -264,7 +395,11 @@ def install_dependencies(blender_python_exe):
                         f"--- Standard Output (stdout) ---\n{e.stdout}\n" \
                         f"-----------------------------"
         print(error_message) # Log detailed error to console
-        report_message = f"ERROR: Failed to install {REQUIRED_PACKAGE}. Check Blender System Console for details."
+        report_message = (
+            f"ERROR: Failed to install {REQUIRED_PACKAGE}. "
+            "The 'av' dependency could not be installed as a pre-built binary for this Python version. "
+            "Check Blender System Console for details."
+        )
         dependencies_installed = False
         return False, report_message
 
@@ -403,7 +538,7 @@ class WhisperProperties(bpy.types.PropertyGroup):
         max=1000, # Set a reasonable max
     )
 
-    text_align_y: EnumProperty(
+    text_anchor_y: EnumProperty(
         name="Vertical Align",
         description="Vertical alignment of the text within the frame",
         items=[
@@ -698,9 +833,10 @@ class SEQUENCER_OT_whisper_transcribe(Operator):
             print("Processing segments...")
 
             # Get settings for text strips (do this *before* the loop)
+            seq_scene = get_seq_scene(context)   # VSE scene (may differ from context.scene in Blender 5.0+)
             output_channel = props.output_channel
             font_size = props.font_size
-            text_align_y = props.text_align_y
+            text_anchor_y = props.text_anchor_y
             wrap_width = props.wrap_width
             render_width = scene.render.resolution_x
 
@@ -752,12 +888,12 @@ class SEQUENCER_OT_whisper_transcribe(Operator):
 
                 # --- Create the Text Strip ---
                 try:
-                    text_strip = scene.sequence_editor.sequences.new_effect(
+                    text_strip = seq_scene.sequence_editor.strips.new_effect(
                         name=f"Sub_{start_frame}",
                         type='TEXT',
                         channel=output_channel,
                         frame_start=start_frame,
-                        frame_end=end_frame
+                        length=end_frame-start_frame
                     )
 
                     if text_strip:
@@ -766,13 +902,13 @@ class SEQUENCER_OT_whisper_transcribe(Operator):
 
                         # Set appearance properties
                         text_strip.font_size = font_size
-                        text_strip.anchor_y = text_align_y
+                        text_strip.anchor_y = text_anchor_y
                         text_strip.anchor_x = 'CENTER'
 
                         # Adjust vertical position slightly
-                        if text_align_y == 'BOTTOM':
+                        if text_anchor_y == 'BOTTOM':
                             text_strip.location[1] = 0.05
-                        elif text_align_y == 'TOP':
+                        elif text_anchor_y == 'TOP':
                             text_strip.location[1] = 1.0 - 0.05 - (text_strip.font_size / scene.render.resolution_y)
                         else: # CENTER
                              text_strip.location[1] = 0.5
@@ -909,14 +1045,15 @@ class SEQUENCER_OT_refresh_list(bpy.types.Operator):
 
     def execute(self, context):
         
-        active = context.scene.sequence_editor.active_strip
+        seq_scene = get_seq_scene(context)
+        active = seq_scene.sequence_editor.active_strip
         # Clear the list
-        context.scene.text_strip_items.clear()
+        get_seq_scene(context).text_strip_items.clear()
 
         # Get a list of all Text Strips in the VSE
         text_strips = [
             strip
-            for strip in bpy.context.scene.sequence_editor.sequences
+            for strip in seq_scene.sequence_editor.strips
             if strip.type == "TEXT"
         ]
 
@@ -925,14 +1062,14 @@ class SEQUENCER_OT_refresh_list(bpy.types.Operator):
 
         # Iterate through the sorted text strips and add them to the list
         for strip in text_strips:
-            item = context.scene.text_strip_items.add()
+            item = get_seq_scene(context).text_strip_items.add()
             item.name = strip.name
             item.text = strip.text
         # Select only the active strip in the UI list
-        for seq in context.scene.sequence_editor.sequences_all:
+        for seq in seq_scene.sequence_editor.strips_all:
             seq.select = False
         if active:
-            context.scene.sequence_editor.active_strip = active
+            seq_scene.sequence_editor.active_strip = active
             active.select = True
             # Set the current frame to the start frame of the active strip
             bpy.context.scene.frame_set(int(active.frame_start))
@@ -948,11 +1085,11 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        text_strips = scene.sequence_editor.sequences_all
+        text_strips = scene.sequence_editor.strips_all
 
         # Get the selected text strip from the UI list
-        index = scene.text_strip_items_index
-        items = context.scene.text_strip_items
+        index = get_seq_scene(context).text_strip_items_index
+        items = get_seq_scene(context).text_strip_items
         un_selected = len(items) - 1 < index
         if not un_selected:
             strip_name = items[index].name
@@ -963,13 +1100,14 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
             chan = find_first_empty_channel(in_frame, out_frame)
 
             # Add a new text strip after the selected strip
-            strips = scene.sequence_editor.sequences
+            seq_scene = get_seq_scene(context)
+            strips = seq_scene.sequence_editor.strips
             new_strip = strips.new_effect(
                 name="Text",
                 type="TEXT",
                 channel=chan,
                 frame_start=in_frame,
-                frame_end=out_frame,
+                length=out_frame-in_frame,
             )
 
             # Copy the settings
@@ -988,10 +1126,11 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
                 new_strip.location = strip.location
                 new_strip.anchor_x = strip.anchor_x
                 new_strip.anchor_y = strip.anchor_y
-                context.scene.sequence_editor.active_strip = new_strip
+                seq_scene.sequence_editor.active_strip = new_strip
             self.report({"INFO"}, "Copying settings from the selected item")
         else:
-            strips = scene.sequence_editor.sequences
+            seq_scene = get_seq_scene(context)
+            strips = seq_scene.sequence_editor.strips
             chan = find_first_empty_channel(
                 context.scene.frame_current, context.scene.frame_current + 100
             )
@@ -1001,7 +1140,7 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
                 type="TEXT",
                 channel=chan,
                 frame_start=context.scene.frame_current,
-                frame_end=context.scene.frame_current + 100,
+                length=context.scene.frame_current + 100 - frame_start,
             )
             new_strip.wrap_width = 0.68
             new_strip.font_size = 44
@@ -1010,13 +1149,13 @@ class SEQUENCER_OT_add_strip(bpy.types.Operator):
             new_strip.anchor_y = "TOP"
             new_strip.use_shadow = True
             new_strip.use_box = True
-            context.scene.sequence_editor.active_strip = new_strip
+            seq_scene.sequence_editor.active_strip = new_strip
             new_strip.select = True
         # Refresh the UIList
         bpy.ops.text.refresh_list()
 
         # Select the new item in the UIList
-        context.scene.text_strip_items_index = index + 1
+        get_seq_scene(context).text_strip_items_index = index + 1
 
         return {"FINISHED"}
 
@@ -1029,17 +1168,17 @@ class SEQUENCER_OT_delete_strip(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        index = context.scene.text_strip_items_index
-        items = context.scene.text_strip_items
+        index = get_seq_scene(context).text_strip_items_index
+        items = get_seq_scene(context).text_strip_items
         selected = len(items) - 1 < index
-        return not selected and context.scene.sequence_editor is not None
+        return not selected and get_seq_scene(context).sequence_editor is not None
 
     def execute(self, context):
         scene = context.scene
         seq_editor = scene.sequence_editor
         frame_org = scene.frame_current
-        index = context.scene.text_strip_items_index
-        items = context.scene.text_strip_items
+        index = get_seq_scene(context).text_strip_items_index
+        items = get_seq_scene(context).text_strip_items
         if len(items) - 1 < index:
             return {"CANCELLED"}
         # Get the selected text strip from the UI list
@@ -1047,21 +1186,21 @@ class SEQUENCER_OT_delete_strip(bpy.types.Operator):
         strip = get_strip_by_name(strip_name)
         if strip:
             # Select all strips
-            for seq in bpy.context.scene.sequence_editor.sequences_all:
+            for seq in get_seq_scene().sequence_editor.strips_all:
                 seq.select = True
             # Split out
             scene.frame_current = strip.frame_final_start + strip.frame_final_duration
             bpy.ops.sequencer.split(frame=scene.frame_current, type="SOFT", side="LEFT")
 
             # Select all strips
-            for seq in bpy.context.scene.sequence_editor.sequences_all:
+            for seq in get_seq_scene().sequence_editor.strips_all:
                 seq.select = True
             # Split in
             frame_current = scene.frame_current = strip.frame_final_start
             bpy.ops.sequencer.split(frame=frame_current, type="SOFT", side="RIGHT")
 
             # Deslect all
-            for s in bpy.context.scene.sequence_editor.sequences_all:
+            for s in get_seq_scene().sequence_editor.strips_all:
                 s.select = False
             # Select all between in and out
             frame_range = range(
@@ -1070,7 +1209,7 @@ class SEQUENCER_OT_delete_strip(bpy.types.Operator):
             )
             for s in frame_range:
                 # scene.frame_current = s
-                for stri in bpy.context.scene.sequence_editor.sequences_all:
+                for stri in get_seq_scene().sequence_editor.strips_all:
                     if (
                         stri.frame_final_start
                         <= s
@@ -1099,16 +1238,16 @@ class SEQUENCER_OT_delete_item(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        index = context.scene.text_strip_items_index
-        items = context.scene.text_strip_items
+        index = get_seq_scene(context).text_strip_items_index
+        items = get_seq_scene(context).text_strip_items
         selected = (len(items) - 1) < index
-        return not selected and context.scene.sequence_editor is not None
+        return not selected and get_seq_scene(context).sequence_editor is not None
 
     def execute(self, context):
         scene = context.scene
         seq_editor = scene.sequence_editor
-        index = context.scene.text_strip_items_index
-        items = context.scene.text_strip_items
+        index = get_seq_scene(context).text_strip_items_index
+        items = get_seq_scene(context).text_strip_items
         if len(items) - 1 < index:
             return {"CANCELLED"}
         # Get the selected text strip from the UI list
@@ -1116,7 +1255,7 @@ class SEQUENCER_OT_delete_item(bpy.types.Operator):
         strip = get_strip_by_name(strip_name)
         if strip:
             # Deselect all strips
-            for seq in context.scene.sequence_editor.sequences_all:
+            for seq in get_seq_scene(context).sequence_editor.strips_all:
                 seq.select = False
             # Delete the strip
             strip.select = True
@@ -1138,12 +1277,12 @@ class SEQUENCER_OT_select_next(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        current_index = context.scene.text_strip_items_index
-        max_index = len(context.scene.text_strip_items) - 1
+        current_index = get_seq_scene(context).text_strip_items_index
+        max_index = len(get_seq_scene(context).text_strip_items) - 1
 
         if current_index < max_index:
-            context.scene.text_strip_items_index += 1
-            selected_item = scene.text_strip_items[scene.text_strip_items_index]
+            get_seq_scene(context).text_strip_items_index += 1
+            selected_item = scene.text_strip_items[get_seq_scene(context).text_strip_items_index]
             selected_item.select = True
             update_text(selected_item, context)
         return {"FINISHED"}
@@ -1157,10 +1296,10 @@ class SEQUENCER_OT_select_previous(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        current_index = context.scene.text_strip_items_index
+        current_index = get_seq_scene(context).text_strip_items_index
         if current_index > 0:
-            context.scene.text_strip_items_index -= 1
-            selected_item = scene.text_strip_items[scene.text_strip_items_index]
+            get_seq_scene(context).text_strip_items_index -= 1
+            selected_item = scene.text_strip_items[get_seq_scene(context).text_strip_items_index]
             print(selected_item)
             selected_item.select = True
             update_text(selected_item, context)
@@ -1175,14 +1314,14 @@ class SEQUENCER_OT_insert_newline(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        index = context.scene.text_strip_items_index
-        items = context.scene.text_strip_items
+        index = get_seq_scene(context).text_strip_items_index
+        items = get_seq_scene(context).text_strip_items
         selected = len(items) - 1 < index
-        return not selected and context.scene.sequence_editor is not None
+        return not selected and get_seq_scene(context).sequence_editor is not None
 
     def execute(self, context):
-        context.scene.text_strip_items[
-            context.scene.text_strip_items_index
+        get_seq_scene(context).text_strip_items[
+            get_seq_scene(context).text_strip_items_index
         ].text += chr(10)
         self.report(
             {"INFO"}, "New line character inserted in the end of the selected item"
@@ -1205,16 +1344,17 @@ def load_subtitles(self, file, context, offset):
     
     import pysubs2
 
-    render = bpy.context.scene.render
+    render = bpy.context.scene.render          # render settings live on the window scene
+    seq_scene = get_seq_scene(context)         # strips go into the VSE scene
     fps = render.fps / render.fps_base
     fps_conv = fps / 1000
 
-    editor = bpy.context.scene.sequence_editor
-    sequences = bpy.context.sequences
-    if not sequences:
+    editor = seq_scene.sequence_editor
+    strips = bpy.context.strips
+    if not strips:
         addSceneChannel = 1
     else:
-        channels = [s.channel for s in sequences]
+        channels = [s.channel for s in strips]
         channels = sorted(list(set(channels)))
         empty_channel = channels[-1] + 1
         addSceneChannel = empty_channel
@@ -1269,12 +1409,12 @@ def load_subtitles(self, file, context, offset):
             position = True
             line.text = re.sub(r"{.+?}", "", line.text)
         if line.end and line.text and line.start:
-            new_strip = editor.sequences.new_effect(
+            new_strip = editor.strips.new_effect(
                 name=line.text,
                 type="TEXT",
                 channel=addSceneChannel,
                 frame_start=int(line.start * fps_conv) + offset,
-                frame_end=int(line.end * fps_conv) + offset,
+                length=(int(line.end * fps_conv) + offset) - int(line.start * fps_conv) + offset,
             )
             new_strip.text = line.text
             new_strip.wrap_width = 0.68
@@ -1360,7 +1500,7 @@ class TEXT_OT_transcribe(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return context.scene.sequence_editor
+        return get_seq_scene(context).sequence_editor
 
     # Supported languages
     # ['Auto detection', 'Afrikaans', 'Albanian', 'Amharic', 'Arabic', 'Armenian', 'Assamese', 'Azerbaijani', 'Bashkir', 'Basque', 'Belarusian', 'Bengali', 'Bosnian', 'Breton', 'Bulgarian', 'Burmese', 'Castilian', 'Catalan', 'Chinese', 'Croatian', 'Czech', 'Danish', 'Dutch', 'English', 'Estonian', 'Faroese', 'Finnish', 'Flemish', 'French', 'Galician', 'Georgian', 'German', 'Greek', 'Gujarati', 'Haitian', 'Haitian Creole', 'Hausa', 'Hawaiian', 'Hebrew', 'Hindi', 'Hungarian', 'Icelandic', 'Indonesian', 'Italian', 'Japanese', 'Javanese', 'Kannada', 'Kazakh', 'Khmer', 'Korean', 'Lao', 'Latin', 'Latvian', 'Letzeburgesch', 'Lingala', 'Lithuanian', 'Luxembourgish', 'Macedonian', 'Malagasy', 'Malay', 'Malayalam', 'Maltese', 'Maori', 'Marathi', 'Moldavian', 'Moldovan', 'Mongolian', 'Myanmar', 'Nepali', 'Norwegian', 'Nynorsk', 'Occitan', 'Panjabi', 'Pashto', 'Persian', 'Polish', 'Portuguese', 'Punjabi', 'Pushto', 'Romanian', 'Russian', 'Sanskrit', 'Serbian', 'Shona', 'Sindhi', 'Sinhala', 'Sinhalese', 'Slovak', 'Slovenian', 'Somali', 'Spanish', 'Sundanese', 'Swahili', 'Swedish', 'Tagalog', 'Tajik', 'Tamil', 'Tatar', 'Telugu', 'Thai', 'Tibetan', 'Turkish', 'Turkmen', 'Ukrainian', 'Urdu', 'Uzbek', 'Valencian', 'Vietnamese', 'Welsh', 'Yiddish', 'Yoruba']
@@ -1646,29 +1786,36 @@ class SEQUENCER_OT_import_subtitles(Operator, ImportHelper):
 
     def execute(self, context):
         if self.do_translate:
-            #ensure_pip(self)
-            print("Please wait. Checking srttranslator module...")
-            if not import_module(self, "srtranslator", "srtranslator"):
+            print("Please wait. Checking deep-translator module...")
+            if not import_module(self, "deep_translator", "deep-translator"):
+                return {"CANCELLED"}
+            if not import_module(self, "pysubs2", "pysubs2"):
                 return {"CANCELLED"}
             file = self.filepath
             if not file:
-                return {"CANCELLED"}
-                print("Invalid file")
                 self.report({"INFO"}, "Invalid file")
-            from srtranslator import SrtFile
-            from srtranslator.translators.deepl_scrap import DeeplTranslator
-            translator = DeeplTranslator()
+                return {"CANCELLED"}
             if pathlib.Path(file).is_file():
                 print("Translating. Please Wait.")
                 self.report({"INFO"}, "Translating. Please Wait.")
-                srt = SrtFile(file)
-                srt.translate(translator, self.translate_from, self.translate_to)
+                import pysubs2
+                from deep_translator import GoogleTranslator
 
-                # Making the result subtitles prettier
-                srt.wrap_lines()
+                # Normalize language codes (e.g. "en-US" → "en", "pt-PT" → "pt")
+                src = self.translate_from.split('-')[0]
+                tgt = self.translate_to.split('-')[0]
 
-                srt.save(f"{os.path.splitext(file)[0]}_translated.srt")
-                translator.quit()
+                subs = pysubs2.load(file, encoding="utf-8")
+                translator = GoogleTranslator(source=src, target=tgt)
+                for line in subs:
+                    if line.text.strip():
+                        try:
+                            line.text = translator.translate(line.text.strip())
+                        except Exception as e:
+                            print(f"Translation error: {e}")
+
+                out_path = f"{os.path.splitext(file)[0]}_translated.srt"
+                subs.save(out_path)
                 print("Translating finished.")
                 self.report({"INFO"}, "Translating finished.")
         file = self.filepath
@@ -1763,7 +1910,7 @@ class SEQUENCER_OT_export_list_subtitles(Operator, ImportHelper):
         # Get a list of all Text Strips in the VSE
         text_strips = [
             strip
-            for strip in bpy.context.scene.sequence_editor.sequences
+            for strip in get_seq_scene().sequence_editor.strips
             if strip.type == "TEXT"
         ]
 
@@ -1847,7 +1994,7 @@ class SEQUENCER_OT_copy_textprops_to_selected(Operator):
         except AttributeError:
             self.report({"INFO"}, "No active strip selected")
             return {"CANCELLED"}
-        for strip in context.selected_sequences:
+        for strip in context.selected_strips:
             if strip.type == active.type == "TEXT":
                 strip.wrap_width = active.wrap_width
                 strip.font = active.font
@@ -1883,12 +2030,13 @@ class SEQUENCER_PT_panel(bpy.types.Panel):
 
         row = layout.row()
         col = row.column()
+        seq_scene = get_seq_scene(context)
         col.template_list(
             "SEQUENCER_UL_List",
             "",
-            context.scene,
+            seq_scene,
             "text_strip_items",
-            context.scene,
+            seq_scene,
             "text_strip_items_index",
             rows=14,
         )
@@ -1928,7 +2076,7 @@ class SEQUENCER_PT_whisper_panel(bpy.types.Panel):
     @classmethod
     def poll(cls, context):
         # Only show the panel if a strip is selected (or always show?)
-        # return context.selected_sequences is not None
+        # return context.selected_strips is not None
         # Let's always show it for easier access to Setup
         return context.scene is not None
 
@@ -1973,7 +2121,7 @@ class SEQUENCER_PT_whisper_panel(bpy.types.Panel):
         row.prop(props, "output_channel", text="Channel")
         row.prop(props, "font_size", text="Font Size")
         row = box.row(align=True)
-        row.prop(props, "text_align_y", text="")
+        row.prop(props, "text_anchor_y", text="")
         row.prop(props, "wrap_width", text="Wrap Width")
 
 
@@ -2005,7 +2153,7 @@ def transcribe(self, context):
 
 
 def copyto_panel_append(self, context):
-    strip = context.active_sequence_strip
+    strip = context.active_strip
     strip_type = strip.type
     if strip_type == "TEXT":
         layout = self.layout
@@ -2013,12 +2161,12 @@ def copyto_panel_append(self, context):
 
 
 def setText(self, context):
-    scene = context.scene
-    current_index = context.scene.text_strip_items_index
-    max_index = len(context.scene.text_strip_items)
+    seq_scene = get_seq_scene(context)
+    current_index = seq_scene.text_strip_items_index
+    max_index = len(seq_scene.text_strip_items)
 
     if current_index < max_index:
-        selected_item = scene.text_strip_items[scene.text_strip_items_index]
+        selected_item = seq_scene.text_strip_items[seq_scene.text_strip_items_index]
         selected_item.select = True
         update_text(selected_item, context)
 
@@ -2046,6 +2194,40 @@ classes = (
     SEQUENCER_OT_whisper_transcribe,
     SEQUENCER_PT_whisper_panel,
 )
+
+
+_seq_scene_cache = {}  # workspace pointer → last sequencer_scene pointer
+
+
+@bpy.app.handlers.persistent
+def _subtitle_editor_check_sequencer_scene(*_):
+    """Rebuild the UIList whenever the workspace's sequencer_scene changes."""
+    try:
+        for window in bpy.context.window_manager.windows:
+            ws = window.workspace
+            seq_scene = getattr(ws, 'sequencer_scene', None) or window.scene
+            key = ws.as_pointer()
+
+            if _seq_scene_cache.get(key) == seq_scene.as_pointer():
+                continue  # nothing changed for this workspace
+
+            _seq_scene_cache[key] = seq_scene.as_pointer()
+
+            if not (hasattr(seq_scene, 'text_strip_items') and seq_scene.sequence_editor):
+                continue
+
+            seq_scene.text_strip_items.clear()
+            strips = sorted(
+                (s for s in seq_scene.sequence_editor.strips if s.type == 'TEXT'),
+                key=lambda s: s.frame_start,
+            )
+            for strip in strips:
+                item = seq_scene.text_strip_items.add()
+                item.name = strip.name
+                item.text = strip.text
+            seq_scene.text_strip_items_index = 0
+    except Exception:
+        pass  # never crash Blender from a handler
 
 
 def register():
@@ -2076,11 +2258,13 @@ def register():
     )
     bpy.types.SEQUENCER_MT_add.append(import_subtitles)
     #bpy.types.SEQUENCER_MT_add.append(transcribe)
-    bpy.types.SEQUENCER_PT_effect.append(copyto_panel_append)
+    bpy.types.STRIP_PT_effect.append(copyto_panel_append)
+    if _subtitle_editor_check_sequencer_scene not in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.append(_subtitle_editor_check_sequencer_scene)
 
 
 def unregister():
-    bpy.types.SEQUENCER_PT_effect.remove(copyto_panel_append)
+    bpy.types.STRIP_PT_effect.remove(copyto_panel_append)
     print(f"Unregistering {bl_info['name']} Addon")
     # Delete the property group from Scene first
     del bpy.types.Scene.whisper_props
@@ -2100,6 +2284,8 @@ def unregister():
     faster_whisper_module = None
     del bpy.types.Scene.text_strip_items
     del bpy.types.Scene.text_strip_items_index
+    if _subtitle_editor_check_sequencer_scene in bpy.app.handlers.depsgraph_update_post:
+        bpy.app.handlers.depsgraph_update_post.remove(_subtitle_editor_check_sequencer_scene)
     bpy.types.SEQUENCER_MT_add.remove(import_subtitles)
     #bpy.types.SEQUENCER_MT_add.append(transcribe)
 
